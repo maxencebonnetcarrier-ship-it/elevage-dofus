@@ -1,0 +1,71 @@
+:root {
+  --bg: #12151c; --panel: #1a1f29; --panel2: #222836; --line: #2e3646; --text: #e6e9f0; --dim: #9aa3b5; --faint: #6c7589;
+  --gold: #d6aa4f; --gold2: #f0cd7c; --ok: #5fcf8f; --ko: #ef7a6c; --warn: #f2b84b; --blue: #7aa7ff;
+  --r: 10px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--gold2); }
+.top { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; padding: 18px 22px 12px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #1b2130, var(--bg)); }
+.brand h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+.brand h1 span { font-size: 13px; color: var(--gold); font-weight: 600; margin-left: 6px; }
+.brand p { margin: 4px 0 0; color: var(--dim); max-width: 560px; }
+.global { display: flex; flex-wrap: wrap; gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--dim); }
+.field select, .field input { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; font: inherit; font-size: 13px; min-width: 0; }
+.field input[type=number] { width: 96px; }
+.field select:focus, .field input:focus { outline: 2px solid var(--gold); outline-offset: 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 22px 0; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+.tabs button { background: none; border: 1px solid transparent; border-bottom: none; color: var(--dim); padding: 9px 14px; border-radius: 8px 8px 0 0; cursor: pointer; font: inherit; font-weight: 600; }
+.tabs button[aria-selected=true] { color: var(--gold2); background: var(--panel); border-color: var(--line); }
+.tabs button:hover { color: var(--text); }
+main { padding: 18px 22px 40px; max-width: 1280px; }
+h2 { font-size: 18px; margin: 0 0 6px; }
+h3 { font-size: 15px; margin: 22px 0 8px; color: var(--gold2); }
+p.lead { color: var(--dim); margin: 0 0 14px; max-width: 900px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 10px 0 6px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; }
+.card .k { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+.card .v { font-size: 24px; font-weight: 700; color: var(--gold2); margin-top: 2px; }
+.card .s { font-size: 12px; color: var(--faint); }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; margin: 10px 0; }
+.box.warn { border-color: #6b5422; background: #241f14; }
+.box.ok { border-color: #275a3d; background: #14231b; }
+.verdict { font-size: 15px; }
+.verdict b { color: var(--gold2); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); margin: 8px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 9px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th { background: var(--panel2); color: var(--dim); font-weight: 600; position: sticky; top: 0; }
+td.l, th.l { text-align: left; white-space: normal; }
+tr:hover td { background: #1d2330; }
+tr.best td { background: #1e2a20; }
+tr.best td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+tr.sel td { background: #2a2416; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; background: var(--panel2); border: 1px solid var(--line); color: var(--dim); }
+.pill.o { color: #ffd98a; border-color: #6b5422; }
+.pill.g { color: var(--ok); border-color: #275a3d; }
+.pill.r { color: var(--ko); border-color: #6b2c25; }
+.ok { color: var(--ok); } .ko { color: var(--ko); } .warnc { color: var(--warn); } .dim { color: var(--dim); } .gold { color: var(--gold2); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.chart { width: 100%; height: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--dim); margin: 4px 0; }
+.legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+.bars div { display: grid; grid-template-columns: 190px 1fr 64px; gap: 8px; align-items: center; margin: 3px 0; font-size: 13px; }
+.bars span.b { height: 12px; border-radius: 6px; background: var(--blue); }
+.bars span.b.t { background: var(--gold); }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 16px; }
+.form .field input[type=number], .form .field select { width: 100%; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--text); }
+.check input { margin-top: 3px; }
+.note { font-size: 12px; color: var(--faint); }
+.tree { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; white-space: pre; line-height: 1.45; overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
+button.btn { background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 6px 12px; cursor: pointer; font: inherit; }
+button.btn:hover { border-color: var(--gold); }
+.foot { color: var(--faint); font-size: 12px; padding: 14px 22px 24px; border-top: 1px solid var(--line); }
+.mini { font-size: 12px; color: var(--dim); }
+td input[type=number] { width: 86px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font: inherit; text-align: right; }
+@media (max-width: 640px) { main, .top, .tabs { padding-left: 12px; padding-right: 12px; } .card .v { font-size: 20px; } .bars div { grid-template-columns: 130px 1fr 56px; } }
+td.l:first-child { min-width: 72px; }
+@media (max-width: 640px) { .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; } .tabs button { white-space: nowrap; padding: 8px 10px; } }
