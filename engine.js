@@ -374,9 +374,10 @@
   /* Valeur du résultat : le bébé gén. 10 extrait (10 neurones, net de taxe) + tous les génétons gagnés en chemin et au dernier croisement.
      Pour chaque couple (carburant de l'XP, carburant de fécondité), on cherche la meilleure stratégie et on compare durée, kamas et bénéfice par jour. */
   /* Valeur d'un généton : le parchemin de caractéristique qui rapporte le plus de kamas par généton (prix HDV net de taxe ÷ coût).
-     Coûts 3.7 chez Eugène Éton : Petit 10, Parchemin 30, Grand 70, Puissant 170 (dofuspourlesnoobs, présentation de la màj 3.7).
+     Coûts 3.7 chez Eugène Éton : Petit 10, Parchemin 30, Grand 70, Puissant 170 (dofuspourlesnoobs, màj 3.7 ; confirmés par la capture de la boutique).
+     Chaque parchemin donne +1 (le Puissant +2) tant que la caractéristique additionnelle est sous son plafond : 25, 50, 75, 100.
      Une valeur saisie à la main (s.genetonValue) l'emporte. */
-  var SCROLLS = [['Petit Parchemin', 10], ['Parchemin', 30], ['Grand Parchemin', 70], ['Puissant Parchemin', 170]];
+  var SCROLLS = [['Petit Parchemin', 10, 25, 1], ['Parchemin', 30, 50, 1], ['Grand Parchemin', 70, 75, 1], ['Puissant Parchemin', 170, 100, 2]];   // nom, coût, plafond, gain
   var SCROLL_STATS = ['Vitalité', 'Sagesse', 'Force', 'Intelligence', 'Chance', 'Agilité'];
   function scrollName(size, stat) { return size + (/^[AEÉIOU]/.test(stat) ? " d'" : ' de ') + stat; }
   function scrollValues(s) {

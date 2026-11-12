@@ -163,6 +163,7 @@ t('fusion : chaque rune simple vaut le meilleur de son prix, Pa ÷ 3 et Ra ÷ 9 
 t('parchemins : un généton vaut le parchemin le plus rentable (prix × (1 − taxe) ÷ coût), un chiffre saisi l’emporte', () => {
   const v = E.scrollValues(S);
   assert.strictEqual(v.length, 24);
+  assert.deepStrictEqual(E.SCROLLS.map(x => [x[1], x[2], x[3]]), [[10, 25, 1], [30, 50, 1], [70, 75, 1], [170, 100, 2]]);   // capture d'Eugène Éton + règle des plafonds
   assert.strictEqual(v[0].name, "Petit Parchemin d'Intelligence"); near(v[0].perGeneton, 10009 * (1 - S.tax) / 10, 1e-9);
   assert.strictEqual(v[1].name, 'Grand Parchemin de Vitalité'); near(v[1].perGeneton, 69985 * (1 - S.tax) / 70, 1e-9);
   near(E.genetonValue(S), 10009 * 0.99 / 10, 1e-9);

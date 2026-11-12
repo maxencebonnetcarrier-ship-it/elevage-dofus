@@ -467,7 +467,7 @@
     var vals = E.scrollValues(S), best = vals[0], by = {};
     vals.forEach(function (v) { by[v.stat + '|' + v.size] = v; });
     var out = h('h3', null, 'Parchemins : que vaut un généton ?');
-    out += table(['Caractéristique'].concat(E.SCROLLS.map(function (x) { return x[0] + ' (' + x[1] + ' gén.)'; })), E.SCROLL_STATS.map(function (st) {
+    out += table(['Caractéristique'].concat(E.SCROLLS.map(function (x) { return x[0] + ' <span class="mini">(' + x[1] + ' gén. · +' + x[3] + ' jusqu’à ' + x[2] + ')</span>'; })), E.SCROLL_STATS.map(function (st) {
       return [esc(st)].concat(E.SCROLLS.map(function (x, i) {
         var v = by[st + '|' + i]; if (!v) return '<span class="warnc">prix ?</span>';
         var t = f(v.perGeneton) + ' <span class="mini">(' + f(v.price) + ')</span>';
@@ -477,7 +477,9 @@
     out += '<p class="note">Kamas par généton = prix HDV × (1 − taxe) ÷ coût en génétons ; entre parenthèses le prix du parchemin. ' +
       (best ? 'Le meilleur échange : <b>' + esc(best.name) + '</b>, soit <b>' + f(best.perGeneton) + ' kamas</b> par généton. ' : '') +
       'Prix par défaut : moyennes HDV Ombre de tes captures du 12/11/2026 ; ils se changent dans « Mes prix ». ' +
-      'Prix moyens : si tu vends beaucoup du même parchemin, le prix baisse ; répartis tes échanges sur les 2 ou 3 meilleurs.</p>';
+      'Prix moyens : si tu vends beaucoup du même parchemin, le prix baisse ; répartis tes échanges sur les 2 ou 3 meilleurs. ' +
+      'Pour toi : Petit, Parchemin et Grand donnent +1 jusqu’à 25, 50 et 75 ; le Puissant +2 jusqu’à 100 (85 génétons le point). ' +
+      'Les génétons ne tombent que si le bébé a une génération plus haute que toutes les montures de l’arbre des deux parents ; chaque parent rapporte selon sa génération (2, 4, 8, 16, 30, 60, 120, 240, 500).</p>';
     return out;
   }
   // ------------------------------------------------------------ 5. prix et réglages
