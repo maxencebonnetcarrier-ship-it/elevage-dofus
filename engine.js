@@ -533,7 +533,9 @@
   }
   function runeLine(stat, value, b, prices, tax, L) {
     var st = BR.stats[stat], W = (3 * value * st.weight * itemLevelOf(L, b) / 200 + 1) * b.coef / 100;
-    var base = st.runes[0], n = W / (base[1] * st.weight), best = bestPerSimple(st, prices);
+    // runes simples seulement (ton choix) : chaque rune vaut le prix de la rune simple ; b.fusion = true → meilleur de simple, Pa ÷ 3, Ra ÷ 9
+    var base = st.runes[0], n = W / (base[1] * st.weight), sp = num(prices[base[0]]);
+    var best = b.fusion === true ? bestPerSimple(st, prices) : (sp === null ? null : { per: sp, rune: base[0], step: 0, price: sp });
     var kamas = best ? n * best.per * (1 - tax) : 0;
     var got = [{ rune: base[0], n: n, price: num(prices[base[0]]) }];
     var fuse = best && best.step > 0 ? { rune: best.rune, n: n / FUSION[best.step], price: best.price } : null;

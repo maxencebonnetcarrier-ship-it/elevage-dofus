@@ -30,52 +30,69 @@ try {
     if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text);
     if (d.method === 'Runtime.consoleAPICalled' && d.params.type === 'error') errors.push(d.params.args.map(a => a.value || a.description).join(' ')); });
   await send('Runtime.enable'); await send('Page.enable');
-  await send('Page.navigate', { url: URL0 + '#plan' }); await sleep(4000);
+  await send('Page.navigate', { url: URL0 }); await sleep(4500);
   const numP = s => +String(s).replace(/[^\d,]/g, '').replace(',', '.');
-  const selP = (k, v) => ev(`(() => { const e = document.querySelector('[data-k="${k}"]'); e.value = ${JSON.stringify(String(v))}; e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-  // 00. vue simple : « Mon plan » ouvert, dragodinde au choix (toutes générations)
-  const pv = await ev(`[...document.querySelectorAll('#tabs [data-tab]')].map(b => b.dataset.tab).join(',') + '|' + !!document.querySelector('#global [data-k="xpFam"]') + '|' + document.querySelectorAll('[data-k="planTarget"] option').length`);
-  check('vue simple : 3 onglets, pas de réglage de carburant en haut, 63 dragodindes au choix', pv === 'plan,prix,brisage|false|63', pv);
-  const tblAfter = t => ev(`(() => { const h = [...document.querySelectorAll('main h3')].find(x => x.textContent.startsWith(${JSON.stringify(t)})); let n = h && h.nextElementSibling; while (n && !n.querySelector('table')) n = n.nextElementSibling; return n ? [...n.querySelectorAll('tbody tr')].map(r => [...r.children].map(c => c.textContent.trim()).join(' ¦ ')) : []; })()`);
+  const selP = async (k, v) => { await ev(`(() => { const e = document.querySelector('main [data-k="${k}"]'); e.value = ${JSON.stringify(String(v))}; e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`); await sleep(3500); };
+  const tblAfter = t => ev(`(() => { const h = [...document.querySelectorAll('main h3')].find(x => x.textContent.startsWith(${JSON.stringify(t)})); let n = h && h.nextElementSibling; while (n && !n.querySelector('table') && !n.matches('.tablewrap')) n = n.nextElementSibling; return n ? [...n.querySelectorAll('tbody tr')].map(r => [...r.children].map(c => c.textContent.trim()).join(' ¦ ')) : []; })()`);
+  // 00. une seule page : aucun onglet, réglages dans la page, 7 tableaux numérotés
+  const pv = await ev(`document.querySelectorAll('#tabs [data-tab]').length + '|' + document.getElementById('global').children.length + '|' + document.querySelectorAll('[data-k="planTarget"] option').length + '|' + [...document.querySelectorAll('main h3')].map(x => x.textContent.slice(0, 2)).filter(x => /^[0-9][.]/.test(x)).join('')`);
+  check('une page : aucun onglet, rien en haut, 63 dragodindes au choix, tableaux 1 à 7', pv === '0|0|63|1.2.3.4.5.6.7.', pv);
   const sols = await tblAfter('1.');
-  check('tableau 1 : la solution la plus rapide en tête, « ton plan », plus 7 stratégies à comparer', sols.length === 9 && sols[0].includes('Solution la plus rapide') && sols[0].includes('ton plan') && sols[2].includes('Capturer plus'), sols.slice(0, 3));
+  check('stratégie par défaut : « le plus rentable en temps » (coût des Makinas compté), 7 lignes', sols.length === 7 && sols[0].includes('Le plus rentable en temps') && sols[0].includes('ton plan'), sols.slice(0, 2));
   const ord = await tblAfter('2.');
   const lastRow = ord[ord.length - 1] || '';
-  check('tableau 2 : 3 captures + 17 dragodindes, dans l’ordre, la dernière = Prune et Rousse (Prune × Rousse, niveau, chance)', ord.length === 20 && ord[0].includes('capture au filet') && lastRow.includes('Prune et Rousse') && lastRow.includes('Prune × ') && /niv\. \d+/.test(lastRow) && lastRow.includes('%'), [ord.length, lastRow]);
-  const t4 = (await tblAfter('4.')).length, t5 = (await tblAfter('5.')).length;
-  check('tableaux 4 et 5 : chance selon le niveau, coût de Makina par réussite', t4 >= 10 && t5 === 9, [t4, t5]);
-  await ev(`document.querySelector('tr[data-opti="0"]').click()`); await sleep(3000);
-  const sols0 = await tblAfter('1.'), ord0 = await tblAfter('2.');
-  check('clic sur « sans Makina » : adopté, plus aucune Makina dans le plan', sols0[1].includes('ton plan') && !ord0.some(r => r.includes('+ Makina')), sols0[1]);
-  // barre XP remplie en cliquant dessus, à 60 % de sa largeur → 120 000 points (T2)
+  check('dans l’ordre : 3 captures + 17 dragodindes, la dernière = Prune et Rousse (Prune × Rousse, niveau, chance)', ord.length === 20 && ord[0].includes('capture au filet') && lastRow.includes('Prune et Rousse') && lastRow.includes('Prune × ') && /niv\. \d+/.test(lastRow) && lastRow.includes('%'), [ord.length, lastRow]);
+  check('dans l’ordre : chaque couleur dit quoi faire des stériles et ratés en trop', ord.slice(3, -1).every(r => /Extraire|Briser|Vendre/.test(r.split(' ¦ ').pop())), ord[5]);
+  await ev(`document.querySelector('tr[data-mode="jours"]').click()`); await sleep(3500);
+  const sJ = await tblAfter('1.'), oJ = await tblAfter('2.');
+  check('clic sur « le plus rapide » : adopté, avec Makinas', sJ[1].includes('ton plan') && oJ.some(r => r.includes('+ Makina')), sJ[1]);
+  await ev(`document.querySelector('tr[data-mode="sans"]').click()`); await sleep(3500);
+  const sS = await tblAfter('1.'), oS = await tblAfter('2.');
+  check('clic sur « sans Makina » : adopté, plus aucune Makina', sS[2].includes('ton plan') && !oS.some(r => r.includes('+ Makina')), sS[2]);
+  // barres : plafond 80 000 (niveau d'éleveur 60) ; un clic au-delà est ramené au plafond
   const perDay = async () => numP((await tblAfter('3.')).find(r => r.startsWith('100')).split(' ¦ ')[3]);
-  const pd1 = await perDay();
-  await ev(`(() => { const g = document.querySelector('[data-fill="xpFam"]'), r = g.getBoundingClientRect(); g.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: r.left + r.width * 0.6, clientY: r.top + r.height / 2 })); })()`); await sleep(3000);
+  const clickBar = async (k, x) => { await ev(`(() => { const g = document.querySelector('[data-fill="${k}"]'), r = g.getBoundingClientRect(); g.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: r.left + r.width * ${x}, clientY: r.top + r.height / 2 })); })()`); await sleep(3500); };
+  const barVal = k => ev(`document.querySelector('[data-fill="${k}"]').getAttribute('aria-valuenow')`);
+  const pd80 = await perDay();
+  await clickBar('xpFam', 0.6);
+  check('plafond 80 000 : un clic à 120 000 est ramené à 80 000', await barVal('xpFam') === '80000', await barVal('xpFam'));
+  await clickBar('xpFam', 0.15);
+  const pd30 = await perDay();
+  check('barre XP à 30 000 : vide avant la connexion suivante, moins de montures niveau 100 par jour qu’à 80 000', await barVal('xpFam') === '30000' && pd30 < pd80, [pd80, pd30]);
+  await selP('barMax', 140000); await clickBar('xpFam', 0.6);
   const gz = await ev(`document.querySelector('[data-fill="xpFam"]').getAttribute('aria-valuenow') + '|' + document.querySelector('[data-fill="xpFam"]').previousElementSibling.textContent`);
-  const pd2 = await perDay();
-  check('clic sur la barre XP à 60 % : 120 000 points, T2, plus de montures niveau 100 par jour', gz.startsWith('120000|') && gz.includes('T2') && pd2 > pd1, [gz, pd1, pd2]);
-  await ev(`document.querySelector('[data-tier="xpFam|Extrait"]').click()`); await sleep(3000);
-  const gz1 = await ev(`document.querySelector('[data-fill="xpFam"]').getAttribute('aria-valuenow')`);
-  check('bouton T1 du tableau des tiers : barre remise à 80 000', gz1 === '80000', gz1);
+  const pd120 = await perDay();
+  check('plafond 140 000, clic à 60 % : 120 000 points, T2, plus de montures niveau 100 par jour', gz.startsWith('120000|') && gz.includes('T2') && pd120 > pd80, [gz.slice(0, 60), pd80, pd120]);
+  await selP('barMax', 80000);
+  check('plafond remis à 80 000 : la barre suit', await barVal('xpFam') === '80000', await barVal('xpFam'));
+  // niveau d'éleveur : les enclos suivent
+  await selP('eleveur', 120);
+  const en = await ev(`document.querySelectorAll('main [data-k="enclos"] option').length`);
+  await selP('eleveur', 60);
+  const en2 = await ev(`document.querySelectorAll('main [data-k="enclos"] option').length + '|' + document.querySelector('main [data-k="enclos"]').value`);
+  check('niveau d’éleveur 120 : 4 enclos ; retour au 60 : 2 enclos', en === 4 && en2 === '2|2', [en, en2]);
+  // brisage : les dragodindes du plan, en runes simples
+  const br = await tblAfter('6.');
+  const sol = n => (br.find(r => r.split(' ¦ ')[0] === n) || '').split(' ¦ ').pop();
+  check('tableau 6 : les 20 dragodindes du plan, Rousse à briser, Prune et Rousse à extraire', br.length === 20 && sol('Rousse').startsWith('Briser au niv.') && sol('Prune et Rousse').startsWith('Extraire'), [br.length, sol('Rousse'), sol('Prune et Rousse')]);
+  const fus = await ev(`/fusionn/i.test(document.querySelector('main').textContent)`);
+  check('runes simples seulement : aucun conseil de fusion', fus === false, fus);
+  const mu = await tblAfter('7.');
+  check('tableau 7 : Muldo et Volkorne, niveau de brisage et kamas par jour', mu.length === 2 && mu.every(r => /niv\. \d+/.test(r)), mu);
   // autre dragodinde : Turquoise (gén. 7)
-  await selP('planTarget', 'Turquoise'); await sleep(3500);
+  await selP('planTarget', 'Turquoise');
   const tq = await ev(`document.querySelector('main h2').textContent`), ordT = await tblAfter('2.');
   check('dragodinde visée = Turquoise : plan recalculé jusqu’à la gén. 7', tq.includes('Turquoise') && tq.includes('gén. 7') && (ordT[ordT.length - 1] || '').includes('Turquoise'), [tq, ordT.length]);
   // case « c'est fait » gardée après rechargement
-  await ev(`(() => { const c = document.querySelector('input.tk'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(2500);
-  await send('Page.reload'); await sleep(4000);
+  await ev(`(() => { const c = document.querySelector('input.tk'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(3000);
+  await send('Page.reload'); await sleep(4500);
   const pr = await ev(`document.querySelector('.prog').textContent + '|' + document.querySelector('input.tk').checked + '|' + document.querySelector('input.tk').closest('tr').className`);
   check('ligne cochée : comptée, gardée après rechargement', /1 \/ \d+/.test(pr) && pr.endsWith('|true|done'), pr);
-  // brisage : la solution pour chaque dragodinde
-  await ev(`location.hash = '#brisage'`); await sleep(2500);
-  const bs = await ev(`(() => { const t = document.querySelector('main h2').nextElementSibling.querySelector('table'); const r = [...t.querySelectorAll('tbody tr')]; const cell = n => { const x = r.find(y => y.children[0].textContent.trim() === n); return x ? x.lastElementChild.textContent : ''; }; return r.length + '|' + cell('Rousse') + '|' + cell('Prune et Rousse'); })()`);
-  check('brisage : 66 dragodindes, Rousse à briser à un niveau, Prune et Rousse à extraire', bs.startsWith('66|Briser au niv.') && bs.endsWith('|Extraire les neurones'), bs);
-  await ev(`location.hash = '#plan'`); await sleep(1500);
-  await selP('planTarget', 'Prune et Rousse'); await sleep(3500);
-  await ev(`document.querySelector('tr[data-opti="1"]').click()`); await sleep(3500);
-  await ev(`document.querySelector('[data-expert="1"]').click()`); await sleep(800);
+  await selP('planTarget', 'Prune et Rousse');
+  await ev(`document.querySelector('tr[data-mode="jours"]').click()`); await sleep(3500);
+  await ev(`document.querySelector('[data-expert="1"]').click()`); await sleep(1200);
   const nt = await ev(`document.querySelectorAll('#tabs [data-tab]').length + '|' + !!document.querySelector('#global [data-k="xpFam"]')`);
-  check('« Plus de détails » : les 10 onglets et les réglages des barres', nt === '10|true', nt);
+  check('« Tous les détails » : les 10 onglets et les réglages des barres', nt === '10|true', nt);
   await ev(`location.hash = '#objectif'`); await sleep(2500);
   const card = () => ev(`[...document.querySelectorAll('.card')].map(c => c.querySelector('.k').textContent + '=' + c.querySelector('.v').textContent)`);
   const before = await card();
@@ -125,7 +142,7 @@ try {
   const prune = await ev(`[...document.querySelectorAll('main tr')].map(t => t.textContent).find(t => t.startsWith('Prune1') || t.startsWith('Prune9'))`);
   check('prix de la Rune Po saisi : la Prune devient chiffrée', prune && !prune.includes('?'), prune);
   const fz = await ev(`(() => { const r = [...document.querySelectorAll('main tr')].map(t => t.textContent); return [r.find(t => t.startsWith('VitalitéVi')), r.find(t => t.startsWith('IntelligenceIne'))].join(' | '); })()`);
-  check('fusion : Vi à fusionner en Ra, Ine à vendre en simples', fz.includes('fusionner en Ra Vi') && fz.includes('vendre les simples'), fz);
+  check('runes simples : plus de tableau « fusionner » dans le brisage', !fz.replace(/[ |]/g, '') && !/fusionn/i.test(await ev(`document.querySelector('main').textContent`)), fz);
   const gaPme = await ev(`[...document.querySelectorAll('main [data-k="runePrices.Rune Ga Pme"]')].filter(e => !e.closest('#mes-prix')).map(e => e.value).join(',')`);
   check('muldo : le prix de la Ga PM vient de « Mes prix » (14 139)', gaPme.length > 0 && gaPme.split(',').every(v => v === '14139'), gaPme);
   // 5 bis. vente au niveau 200 à ton prix (brisage des dragodindes)
@@ -174,19 +191,19 @@ try {
   const back = await ev(`document.querySelector('[data-k="enclos"]').value`);
   check('remise à zéro : 2 enclos', back === '2', back);
   // 7 bis. mise à niveau 5 → 6 : 12 enclos ramenés à 6, anciennes options retirées
-  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 5, enclos: 12, parentsOnly: true, cloneKeepsLevel: true, neurone: 36000 }))`);
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 5, expert: true, enclos: 12, parentsOnly: true, cloneKeepsLevel: true, neurone: 36000 }))`);
   await send('Page.reload'); await sleep(2500);
   await ev(`location.hash = '#prix'`); await sleep(1500);
   const v6 = await ev(`document.querySelector('[data-k="enclos"]').value + '|' + !!document.querySelector('[data-k="parentsOnly"]') + '|' + !!document.querySelector('[data-k="cloneKeepsLevel"]') + '|' + !!document.querySelector('[data-k="reuse"]') + '|' + document.querySelector('#mes-prix [data-k="neurone"]').value`);
   check('version 5 → 6 : 6 enclos au plus, options « parents seuls » et « clone garde son niveau » retirées, saisie gardée', v6 === '6|false|false|true|36000', v6);
   // 8. mise à niveau des réglages d'une ancienne version (3) : anciens prix par défaut remplacés, saisies gardées
-  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 3, enclos: 3, runePrices: { 'Rune Vi': 135, 'Rune Ra Vi': 1317, 'Rune Pui': 999, 'Rune Ine': null }, brisage: { runePrice: 20000 } }))`);
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 3, expert: true, enclos: 3, runePrices: { 'Rune Vi': 135, 'Rune Ra Vi': 1317, 'Rune Pui': 999, 'Rune Ine': null }, brisage: { runePrice: 20000 } }))`);
   await send('Page.reload'); await sleep(2500);
   await ev(`location.hash = '#brisage'`); await sleep(1500);
   const mig = await ev(`['Rune Vi', 'Rune Ra Vi', 'Rune Pui', 'Rune Ine'].map(k => document.querySelector('#mes-prix [data-k="runePrices.' + k + '"]').value).join(',') + '|' + document.querySelector('[data-k="enclos"]').value`);
   check('version 3 → 4 : prix vidéo à la place des anciens défauts, saisie 999 et 3 enclos gardés', mig === '95,1044,999,51|3', mig);
   // 9. parchemins : valeur du généton calculée, ancien 100 par défaut retiré, prix modifiable depuis « Mes prix »
-  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 4, genetonValue: 100, neurone: 23000 }))`);
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 4, expert: true, genetonValue: 100, neurone: 23000 }))`);
   await send('Page.reload'); await sleep(2500);
   await ev(`location.hash = '#prix'`); await sleep(1500);
   const gv = await ev(`(() => { const e = document.querySelector('#mes-prix [data-k="genetonValue"]'); return e.value + '|' + e.placeholder + '|' + [...document.querySelectorAll('main b.gold')].map(b => b.textContent).join(','); })()`);
@@ -197,7 +214,7 @@ try {
   const gv2 = await ev(`document.querySelector('#mes-prix [data-k="genetonValue"]').placeholder + '|' + document.querySelector('main').textContent.includes('Puissant Parchemin de Sagesse, soit')`);
   check('Puissant Parchemin de Sagesse à 300 000 : le généton passe à 1 747', gv2.replace(/[\s  ]/g, '') === 'auto:1747|true', gv2);
   // 10. carburants : 0 par défaut, coût affiché dès qu'un prix est saisi, par enclos ; anciens prix relevés remis à 0 à la mise à niveau
-  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 4, fuel: { 'Expérience': [12.5, 999, 347.0, null] } }))`);
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 4, expert: true, fuel: { 'Expérience': [12.5, 999, 347.0, null] } }))`);
   await send('Page.reload'); await sleep(2500);
   const fx = await ev(`[0, 1, 2].map(i => document.querySelector('#mes-prix [data-k="fuel.Expérience.' + i + '"]').value).join(',')`);
   check('version 4 → 5 : carburant à l’ancien prix relevé → 0, prix saisi (999) gardé', fx === '0,999,0', fx);

@@ -147,7 +147,7 @@ t('brisage DD : bonus selon le niveau (75 % au niveau 100)', () => {
   near(E.statAtLevel(400, 100, b), 300, 1e-9); near(E.statAtLevel(400, 200, b), 400, 1e-9); near(E.statAtLevel(400, 150, b), 350, 1e-9); near(E.statAtLevel(400, 1, b), 3, 1e-9);
 });
 t('brisage DD, ancien modèle (90 %, objet niveau 60, bonus selon le niveau) : Prune niveau 200 → 1,64 Rune Po et 65,7 Rune Vi (→ 7,3 Ra Vi par fusion)', () => {
-  const s = Object.assign({}, S, { ddBrise: { L: 200, coef: 90, mountLevel: false, jetMax: false, itemLevel: 60, curve100: 0.75 } });
+  const s = Object.assign({}, S, { ddBrise: { L: 200, coef: 90, mountLevel: false, jetMax: false, itemLevel: 60, curve100: 0.75, fusion: true } });
   const r = E.brisageDD('Prune', 200, s);
   const po = r.lines.find(l => l.stat === 'Portée'), vi = r.lines.find(l => l.stat === 'Vitalité');
   near(po.weight, (3 * 2 * 51 * 60 / 200 + 1) * 0.9, 1e-9); near(po.runes[0].n, po.weight / 51, 1e-9);
@@ -158,15 +158,15 @@ t('brisage DD, ancien modèle (90 %, objet niveau 60, bonus selon le niveau) : P
   near(r.kamas, (65.7 * 1044 / 9 + po.runes[0].n * 3501) * (1 - S.tax), 1e-6);
   assert.strictEqual(r.missing, false);
 });
-t('brisage DD, modèle jeu (50 %, niveau de la monture, bonus max) : Prune niveau 200 → 3,01 Rune Po et 120,5 Rune Vi', () => {
+t('brisage DD, modèle jeu (50 %, niveau de la monture, bonus max) : Prune niveau 200 → 3,01 Rune Po et 120,5 Rune Vi, comptées en runes simples', () => {
   const s = Object.assign({}, S, { runePrices: Object.assign({}, S.runePrices, { 'Rune Po': null }) });
   const r = E.brisageDD('Prune', 200, s);
   const po = r.lines.find(l => l.stat === 'Portée'), vi = r.lines.find(l => l.stat === 'Vitalité');
   near(po.weight, (3 * 2 * 51 * 200 / 200 + 1) * 0.5, 1e-9); near(po.runes[0].n, 153.5 / 51, 1e-9);
   near(vi.weight, (3 * 400 * 0.2 * 200 / 200 + 1) * 0.5, 1e-9);
   assert.deepStrictEqual(vi.runes.map(x => [x.rune, +x.n.toFixed(2)]), [['Rune Vi', 120.5]]);
-  near(vi.fuse.n, 120.5 / 9, 1e-9);
-  near(r.kamas, 120.5 * 1044 / 9 * (1 - S.tax), 1e-6);
+  assert.strictEqual(vi.fuse, null);   // runes simples seulement : pas de fusion
+  near(r.kamas, 120.5 * 95 * (1 - S.tax), 1e-6);
   near(r.extract, 9 * S.neurone * (1 - S.tax), 1e-6); assert.strictEqual(S.neurone, 35000);
   assert.strictEqual(r.missing, true); assert.strictEqual(r.breakEven.rune, 'Rune Po');
   near(r.breakEven.price, (r.extract + r.xp - r.kamas) / (po.baseCount * (1 - S.tax)), 1e-6);

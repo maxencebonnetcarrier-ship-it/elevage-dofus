@@ -140,3 +140,9 @@ details.detail { margin: 14px 0; }
 details.detail > summary { cursor: pointer; color: var(--gold2); font-weight: 600; padding: 6px 0; }
 @media (max-width: 640px) { main td.l:first-child { min-width: 150px; } .phead select { min-width: 0; width: 100%; } .phead .field { width: 100%; } }
 @media (max-width: 640px) { main td.l:first-child:has(input.tk) { min-width: 0; } }
+/* ---------- une page ---------- */
+.box.reglages { border-color: #6b5422; }
+.box.reglages h2 { margin: 0 0 10px; }
+.gauge2 .glow { position: absolute; top: 0; bottom: 0; background: rgba(214,170,79,.35); pointer-events: none; }
+tr.alt td { color: var(--dim); }
+tr[data-mode]:hover td { background: #2a2416; }
