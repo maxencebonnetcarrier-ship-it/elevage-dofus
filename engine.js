@@ -405,19 +405,27 @@
      pas son PM mais donne quand même des runes Ga PM). Il retrouve les deux mesures de la vidéo :
      0,756 rune Ga PM au niveau 100 (≈ 0,80 mesuré) et 1,506 au niveau 200 (76 runes pour 50 muldos = 1,52). */
   function itemLevelOf(L, b) { return b.mountLevel === false ? b.itemLevel : clamp(L, 1, 200); }
+  /* Le brisage ne donne que des runes SIMPLES (constaté en jeu) ; les Pa et Ra s'obtiennent par fusion :
+     3 simples → 1 Pa, 3 Pa → 1 Ra (next-stage.fr), donc 1 Pa = 3 simples et 1 Ra = 9 simples.
+     Chaque simple vaut donc le meilleur de : son prix, prix Pa / 3, prix Ra / 9 (prix connus seulement). */
+  var FUSION = [1, 3, 9];
+  function bestPerSimple(st, prices) {
+    var best = null;
+    st.runes.forEach(function (r, i) {
+      var pr = num(prices[r[0]]); if (pr === null) return;
+      var per = pr / FUSION[i];
+      if (!best || per > best.per) best = { per: per, rune: r[0], step: i, price: pr };
+    });
+    return best;
+  }
   function runeLine(stat, value, b, prices, tax, L) {
     var st = BR.stats[stat], W = (3 * value * st.weight * itemLevelOf(L, b) / 200 + 1) * b.coef / 100;
-    var rs = st.runes.slice().sort(function (x, y) { return y[1] - x[1]; }), left = W, kamas = 0, missing = false, got = [];
-    rs.forEach(function (r, i) {
-      var rw = r[1] * st.weight, n = i === rs.length - 1 ? left / rw : Math.floor(left / rw + 1e-9);
-      if (n <= 0) return;
-      left -= n * rw;
-      var pr = num(prices[r[0]]);
-      if (pr === null) missing = true; else kamas += n * pr * (1 - tax);
-      got.push({ rune: r[0], n: n, price: pr });
-    });
-    var base = st.runes[0];
-    return { stat: stat, value: value, weight: W, runes: got, kamas: kamas, missing: missing, baseRune: base[0], baseCount: W / (base[1] * st.weight) };
+    var base = st.runes[0], n = W / (base[1] * st.weight), best = bestPerSimple(st, prices);
+    var kamas = best ? n * best.per * (1 - tax) : 0;
+    var got = [{ rune: base[0], n: n, price: num(prices[base[0]]) }];
+    var fuse = best && best.step > 0 ? { rune: best.rune, n: n / FUSION[best.step], price: best.price } : null;
+    return { stat: stat, value: value, weight: W, runes: got, fuse: fuse, perSimple: best ? best.per : null, kamas: kamas,
+             missing: !best, baseRune: base[0], baseCount: n };
   }
   function brisageDD(X, L, s) {
     var b = s.ddBrise, prices = s.runePrices || {}, tax = num(s.tax) || 0, bonus = BR.dd[X] || {};
@@ -469,6 +477,6 @@
               OPTI: OPTI, LEVELS: LEVELS, recipe: recipe, pTarget: pTarget, outcomes: outcomes, recovery: recovery, drain: drain,
               xpPerHour: xpPerHour, refillCostPer1000: refillCostPer1000, xpBetween: xpBetween, levelHours: levelHours, levelCost: levelCost,
               fertHours: fertHours, fertCost: fertCost, cheapestFrom: cheapestFrom, baseDeposit: baseDeposit, depositTotal: depositTotal, prepHours: prepHours, optiCost: optiCost, plan: plan, unitCosts: unitCosts,
-              optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel };
+              optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel, bestPerSimple: bestPerSimple };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);

@@ -2,7 +2,7 @@
    Ombre sinon Kourial, novembre 2026) — coût en kamas pour 1 000 points de jauge, recette la moins chère de chaque famille.
    null = aucun prix connu (un ingrédient sans relevé). Tout se modifie dans l'onglet « Prix et réglages ». */
 var DD_DEFAULTS = {
-  version: 3,
+  version: 4,
   target: 'Prune et Rousse',
   objective: 'jours',
   enclos: 2,
@@ -44,13 +44,14 @@ var DD_DEFAULTS = {
     "Perte de sérénité": ["Grand Extrait de perte de Sérénité","Philtre de perte de Sérénité","Minuscule Potion de perte de Sérénité","Grand Élixir de perte de Sérénité"],
     "Expérience": ["Grand Extrait d'Expérience de monture","Philtre d'Expérience de monture","Grande Potion d'Expérience de monture","—"]
   },
-  // prix des runes : Vi / Pa Vi / Ra Vi = Kourial (dofus-calculator.fr, 01/04/2026) ; Ga PA / Ga PM = vidéo ; le reste à relever sur Ombre
+  // prix des runes : hôtel des ventes Ombre, relevés le 12/11/2026 sur la vidéo de l'utilisateur (runes.mp4).
+  // Rune Fo, Cha et Age simples : hors de l'écran dans la vidéo → à saisir (la Pa et la Ra suffisent en attendant, par fusion).
   runePrices: {
-    'Rune Vi': 135, 'Rune Pa Vi': 442, 'Rune Ra Vi': 1317, 'Rune Ga Pa': 22800, 'Rune Ga Pme': 20000,
-    'Rune Ini': null, 'Rune Pa Ini': null, 'Rune Ra Ini': null, 'Rune Fo': null, 'Rune Pa Fo': null, 'Rune Ra Fo': null,
-    'Rune Ine': null, 'Rune Pa Ine': null, 'Rune Ra Ine': null, 'Rune Cha': null, 'Rune Pa Cha': null, 'Rune Ra Cha': null,
-    'Rune Age': null, 'Rune Pa Age': null, 'Rune Ra Age': null, 'Rune Pui': null, 'Rune Pa Pui': null, 'Rune Ra Pui': null,
-    'Rune Prospe': null, 'Rune Pa Prospe': null, 'Rune So': null, 'Rune Invo': null, 'Rune Cri': null, 'Rune Po': null
+    'Rune Vi': 95, 'Rune Pa Vi': 320, 'Rune Ra Vi': 1044, 'Rune Ga Pa': 15566, 'Rune Ga Pme': 14139,
+    'Rune Ini': 33, 'Rune Pa Ini': 133, 'Rune Ra Ini': 353, 'Rune Fo': null, 'Rune Pa Fo': 127, 'Rune Ra Fo': 346,
+    'Rune Ine': 51, 'Rune Pa Ine': 141, 'Rune Ra Ine': 318, 'Rune Cha': null, 'Rune Pa Cha': 140, 'Rune Ra Cha': 527,
+    'Rune Age': null, 'Rune Pa Age': 253, 'Rune Ra Age': 674, 'Rune Pui': 109, 'Rune Pa Pui': 396, 'Rune Ra Pui': 1335,
+    'Rune Prospe': 168, 'Rune Pa Prospe': 399, 'Rune So': 167, 'Rune Pa So': 746, 'Rune Invo': 1961, 'Rune Cri': 760, 'Rune Po': 3501
   },
   // brisage des dragodindes : taux fixe de 50 % pour les montures, niveau de l'objet = niveau de la monture, bonus à leur maximum
   // (mountLevel: false → niveau d'objet fixe itemLevel ; jetMax: false → bonus selon le niveau, curve100 atteint au niveau 100)
@@ -60,7 +61,7 @@ var DD_DEFAULTS = {
     weight: 90,
     itemLevel: 60,
     divisor: 100,
-    runePrice: 20000,
+    runePrice: 14139,   // repli ; la page prend le prix Ga PM / Ga PA de « Mes prix »
     tax: 0.01,
     filet: 310,
     pricePerXp: 0.0125,

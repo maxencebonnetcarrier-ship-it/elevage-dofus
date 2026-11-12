@@ -67,6 +67,10 @@ try {
   await ev(`(() => { const e = document.querySelector('[data-k="runePrices.Rune Po"]'); e.value = '200000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1500);
   const prune = await ev(`[...document.querySelectorAll('main tr')].map(t => t.textContent).find(t => t.startsWith('Prune1') || t.startsWith('Prune9'))`);
   check('prix de la Rune Po saisi : la Prune devient chiffrée', prune && !prune.includes('?'), prune);
+  const fz = await ev(`(() => { const r = [...document.querySelectorAll('main tr')].map(t => t.textContent); return [r.find(t => t.startsWith('VitalitéVi')), r.find(t => t.startsWith('IntelligenceIne'))].join(' | '); })()`);
+  check('fusion : Vi à fusionner en Ra, Ine à vendre en simples', fz.includes('fusionner en Ra Vi') && fz.includes('vendre les simples'), fz);
+  const gaPme = await ev(`[...document.querySelectorAll('main [data-k="runePrices.Rune Ga Pme"]')].filter(e => !e.closest('#mes-prix')).map(e => e.value).join(',')`);
+  check('muldo : le prix de la Ga PM vient de « Mes prix » (14 139)', gaPme.length > 0 && gaPme.split(',').every(v => v === '14139'), gaPme);
   for (const t of ['objectif', 'chemin', 'niveau', 'renta', 'final', 'prix', 'brisage', 'regles']) {
     await ev(`location.hash = '#${t}'`); await sleep(900);
     const bad = await ev(`document.querySelector('main').textContent.includes('Erreur de calcul') || document.querySelector('main').textContent.length < 300`);
@@ -96,6 +100,12 @@ try {
   await ev(`document.querySelector('[data-reset]').click()`); await sleep(1500);
   const back = await ev(`document.querySelector('[data-k="enclos"]').value`);
   check('remise à zéro : 2 enclos', back === '2', back);
+  // 8. mise à niveau des réglages d'une ancienne version (3) : anciens prix par défaut remplacés, saisies gardées
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 3, enclos: 3, runePrices: { 'Rune Vi': 135, 'Rune Ra Vi': 1317, 'Rune Pui': 999, 'Rune Ine': null }, brisage: { runePrice: 20000 } }))`);
+  await send('Page.reload'); await sleep(2500);
+  await ev(`location.hash = '#brisage'`); await sleep(1500);
+  const mig = await ev(`['Rune Vi', 'Rune Ra Vi', 'Rune Pui', 'Rune Ine'].map(k => document.querySelector('#mes-prix [data-k="runePrices.' + k + '"]').value).join(',') + '|' + document.querySelector('[data-k="enclos"]').value`);
+  check('version 3 → 4 : prix vidéo à la place des anciens défauts, saisie 999 et 3 enclos gardés', mig === '95,1044,999,51|3', mig);
   check('aucune erreur JavaScript', errors.length === 0, errors);
 } catch (e) { console.log('KO  exception : ' + e.message); ok = false; }
 finally { try { ws && ws.close(); } catch { } ch.kill(); }

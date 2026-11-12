@@ -16,6 +16,13 @@
       if (saved && saved.version === 1) { delete saved.ddBrise; delete saved.capMargin; saved.version = 2; }
       // version 2 → 3 : taxe HDV 1 % (au lieu de 3 %) si l'ancienne valeur par défaut n'avait pas été changée
       if (saved && saved.version === 2) { if (saved.tax === 0.03) delete saved.tax; if (saved.brisage && saved.brisage.tax === 0.03) delete saved.brisage.tax; saved.version = 3; }
+      // version 3 → 4 : prix des runes relevés sur Ombre (vidéo du 12/11) ; seules les anciennes valeurs par défaut sont remplacées, tes saisies restent
+      if (saved && saved.version === 3) {
+        var OLD = { 'Rune Vi': 135, 'Rune Pa Vi': 442, 'Rune Ra Vi': 1317, 'Rune Ga Pa': 22800, 'Rune Ga Pme': 20000 };
+        if (saved.runePrices) Object.keys(saved.runePrices).forEach(function (k) { var v = saved.runePrices[k]; if (v === null || v === '' || v === OLD[k]) delete saved.runePrices[k]; });
+        if (saved.brisage && saved.brisage.runePrice === 20000) delete saved.brisage.runePrice;
+        saved.version = 4;
+      }
       if (saved && saved.version === d.version) {
         Object.keys(saved).forEach(function (k) {
           if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'ddBrise') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
@@ -131,7 +138,7 @@
   function pricePanel() {
     var s = eng(), n = 0;
     var main = [['Neurone de dragodinde', 'neurone'], ['Valeur d’un généton', 'genetonValue'], ['Queue de dragodinde sauvage', 'queuePrice'],
-                ['Queue de Glourséleste', 'glourPrice'], ['Filet universel', 'filet'], ['Rune visée (Muldo / Volkorne)', 'brisage.runePrice']];
+                ['Queue de Glourséleste', 'glourPrice'], ['Filet universel', 'filet'], ['Taxe HDV (0,01 = 1 %)', 'tax']];
     var out = '<details class="prices" id="mes-prix"' + (S.pricesOpen ? ' open' : '') + '><summary>💰 <b>Mes prix</b> <span class="mini">— modifie-les ici depuis n’importe quel onglet : tout se recalcule et reste gardé sur cet appareil</span></summary><div class="prices-in">';
     out += '<div class="pgrid">' + main.map(function (m) { return '<label class="field">' + m[0] + numInput(m[1], getPath(m[1])) + '</label>'; }).join('') + '</div>';
     out += '<h4>Optimakinas (prix d’achat ; vide = coût du craft)</h4><div class="pgrid">' + Object.keys(E.OPTI).map(function (g) {
@@ -465,8 +472,14 @@
     out += '<div class="box verdict">Au niveau ' + L + ' : ' + (!priced.length ? '' : 'avec les prix connus, <b>' + win.length + '</b> dragodinde' + (win.length > 1 ? 's' : '') + ' sur ' + priced.length + ' chiffrée' + (priced.length > 1 ? 's' : '') +
       ' rapportent plus brisées qu’extraites' + (win.length ? ' (la meilleure : <b>' + esc(win[0].X) + '</b>, +' + f(win[0].gain) + ' kamas)' : '') + '. ') +
       (sure.length ? '<b>' + sure.length + '</b> ' + (priced.length ? 'autres ' : 'dragodindes ') + 'sont rentables même sans connaître le prix de leur rune principale (surtout les gén. 1 élevées, qui ne donnent aucun neurone). ' : '') +
-      (unpriced.length - sure.length) + ' ' + (sure.length ? 'autres ' : 'dragodindes ') + 'attendent le prix d’une rune : la colonne « Rentable si » dit le prix à partir duquel le brisage gagne.</div>';
-    function runesTxt(r) { return r.lines.map(function (l) { return l.runes.map(function (x) { return f(x.n, x.n < 10 ? 1 : 0) + ' ' + esc(x.rune.replace('Rune ', '')); }).join(' + '); }).join(' · '); }
+      (unpriced.length - sure.length > 0 ? (unpriced.length - sure.length) + ' ' + (sure.length ? 'autres ' : 'dragodindes ') + 'attendent le prix d’une rune : la colonne « Rentable si » dit le prix à partir duquel le brisage gagne.' :
+        (priced.length && win.length < priced.length ? 'Les autres valent plus extraites : leurs neurones (gén. × ' + f(+S.neurone || 0) + ' kamas) dépassent leurs runes.' : '')) + '</div>';
+    function runesTxt(r) {
+      return r.lines.map(function (l) {
+        var x = l.runes[0], s = f(x.n, x.n < 10 ? 1 : 0) + ' ' + esc(x.rune.replace('Rune ', ''));
+        return l.fuse ? s + ' <span class="gold">→ ' + f(l.fuse.n, 1) + ' ' + esc(l.fuse.rune.replace('Rune ', '')) + '</span>' : s;
+      }).join(' · ');
+    }
     function bonusTxt(r) { return r.lines.map(function (l) { return f(l.value, l.value < 10 ? 1 : 0) + ' ' + esc(l.stat); }).join(', '); }
     var trs = priced.concat(unpriced).map(function (r) {
       var be = r.breakEven;
@@ -477,20 +490,29 @@
     });
     out += table(['Dragodinde', 'Gén.', 'Bonus au niveau ' + L, 'Runes obtenues', 'Kamas des runes', 'Coût de l’XP', 'Extraction (neurones)', 'Brisage − extraction', 'Rentable si'], trs, ['l', '', 'l', 'l']);
     out += '<p class="note">« Rentable si » : prix de vente de la rune simple (taxe déduite) à partir duquel briser rapporte autant qu’extraire, en comptant 0 pour les autres runes sans prix. ' +
-      'Une Rune Pa ou Ra vaut 3 ou 10 runes simples : compare avec son prix divisé par 3 ou 10. Coût de l’XP : carburant « ' + esc(S.xpFam) + ' », partagé entre les ' + S.perEnclos + ' montures de l’enclos.</p>';
+      '<b>Le brisage ne donne que des runes simples.</b> 3 simples fusionnent en 1 Pa, 3 Pa en 1 Ra : la page compte chaque simple au meilleur de son prix, du prix de la Pa ÷ 3 et de la Ra ÷ 9, ' +
+      'et la flèche dorée dit quand fusionner (ex. « → 6,7 Ra Vi »). Coût de l’XP : carburant « ' + esc(S.xpFam) + ' », partagé entre les ' + S.perEnclos + ' montures de l’enclos.</p>';
     out += h('h3', null, 'Prix des runes (Ombre) — mets les tiens');
     var rp = Object.keys(S.runePrices).map(function (k) {
       return [esc(k), '<input type="number" step="any" data-k="runePrices.' + k + '" data-num="1" value="' + (S.runePrices[k] == null ? '' : S.runePrices[k]) + '" placeholder="?">'];
     });
     var half = Math.ceil(rp.length / 2);
     out += '<div class="grid2"><div>' + table(['Rune', 'Prix'], rp.slice(0, half)) + '</div><div>' + table(['Rune', 'Prix'], rp.slice(half)) + '</div></div>';
-    out += '<p class="note">Repères trouvés : Rune Vi 135, Pa Vi 442, Ra Vi 1 317 (Kourial, avril 2026) ; Ga PA 22 800 et Ga PM 20 000 (vidéo). Aucun relevé public pour les autres runes sur Ombre. ' +
+    var fz = Object.keys(E.BR.stats).map(function (st) {
+      var o = E.BR.stats[st], bst = E.bestPerSimple(o, S.runePrices);
+      return bst ? [esc(st), esc(o.runes[0][0].replace('Rune ', '')), f(bst.per, 1), bst.step === 0 ? 'vendre les simples' : '<span class="gold">fusionner en ' + esc(bst.rune.replace('Rune ', '')) + '</span>'] : null;
+    }).filter(Boolean);
+    out += h('h3', null, 'Vendre les simples ou fusionner ?') + table(['Caractéristique', 'Rune simple', 'Valeur d’une simple', 'Le mieux'], fz);
+    out += '<p class="note">Prix par défaut : hôtel des ventes Ombre relevé le 12/11/2026 sur ta vidéo. Rune Fo, Cha et Age simples n’y sont pas visibles : mets-les si tu les connais. ' +
       'Poids des caractéristiques : DofusDB (Vitalité 0,2 · Initiative 0,1 · Force, Intelligence, Chance, Agilité 1 · Puissance 2 · Prospection 3 · Soins et Critique 10 · Invocation 30 · Portée 51). ' +
       'Bonus maximum : dofuspourlesnoobs (400 Vitalité ; 2 Portée pour la Prune ; 14 % Critique pour l’Émeraude…).</p>';
     return out;
   }
   function tabBrisage() {
-    var b = S.brisage, rows = [], fine = [], places = S.enclos * b.perEnclos, cpd = Math.max(1, +b.capturesPerDay || 40);
+    // le prix de la rune visée vient de « Mes prix » (Rune Ga Pme pour le muldo, Rune Ga Pa pour le volkorne)
+    var rk = +S.brisage.weight === 100 ? 'Rune Ga Pa' : 'Rune Ga Pme', rpz = S.runePrices[rk];
+    var b = Object.assign({}, S.brisage, rpz != null && rpz !== '' ? { runePrice: +rpz } : {});
+    var rows = [], fine = [], places = S.enclos * b.perEnclos, cpd = Math.max(1, +b.capturesPerDay || 40);
     for (var L = 1; L <= 200; L++) {
       var r0 = E.brisage(L, b);
       // débit par jour : tes captures, ou ce que tes places d'enclos peuvent monter à ce niveau ; le plus petit des deux
@@ -509,7 +531,7 @@
       field('Formule', 'brisage.model', 'select', { options: [['jeu', 'jeu : taux 50 %, niveau de la monture'], ['video', 'celle de la vidéo']] }) +
       field('Rune visée', 'brisage.weight', 'select', { num: 1, options: [[90, 'Ga PM (poids 90)'], [100, 'Ga PA (poids 100)']] }) +
       field('Captures par jour', 'brisage.capturesPerDay', 'number', { min: 1, step: 1, note: 'ce que tu captures vraiment (risque de mort sur Ombre)' }) +
-      field('Prix de la rune (kamas)', 'brisage.runePrice', 'number', { min: 0, note: 'vidéo : Ga PM 20 000, Ga PA 22 800' }) +
+      '<label class="field">Prix de la ' + esc(rk) + ' (kamas)' + numInput('runePrices.' + rk, S.runePrices[rk]) + '<span class="note">le même que dans « Mes prix »</span></label>' +
       field('Filet (kamas)', 'brisage.filet', 'number', { min: 0, note: 'vidéo : 1 210' }) +
       field('Kamas par point d’XP', 'brisage.pricePerXp', 'number', { min: 0, step: 0.0001, note: 'classeur (Extrait) 0,0125 · vidéo 0,33' }) +
       field('XP par heure', 'brisage.xpPerHour', 'number', { min: 1, note: 'Extrait : 3 600' }) +
@@ -563,7 +585,7 @@
       '<b>Durée</b> : estimation moyenne (voir « Gén. 10 ») ; avec 2 connexions par jour, une fécondité prend une journée.',
       '<b>Minuteur</b> : mêmes règles que le <a href="https://dofus-portals.fr/outils/timer-elevage/" target="_blank" rel="noopener">timer d’élevage de dofus-portals</a> (un tic toutes les 10 s, gain de 10 / 20 / 30 / 40 selon la charge restante), avec les paliers doublés de la 3.7. ' +
         'Non compté ici : une capacité (Amoureuse, Endurante, Précoce, Sage) ou la méryde du jour double le gain de sa jauge, jusqu’à ×4, sans vider la charge plus vite — tes durées réelles peuvent donc être plus courtes.',
-      '<b>Brisage des montures</b> : taux fixe de 50 % (constaté en jeu), niveau de l’objet = niveau de la monture, bonus à leur maximum ; ce modèle retrouve les mesures de la vidéo (0,76 rune Ga PM au niveau 100, 1,51 au 200).'
+      '<b>Brisage des montures</b> : taux fixe de 50 % (constaté en jeu), niveau de l’objet = niveau de la monture, bonus à leur maximum ; ce modèle retrouve les mesures de la vidéo (0,76 rune Ga PM au niveau 100, 1,51 au 200). Il ne donne que des <b>runes simples</b> : 3 simples fusionnent en 1 Pa, 3 Pa en 1 Ra.'
     ]);
     out += h('h3', null, 'Sources');
     out += li([
@@ -604,6 +626,6 @@
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'objectif'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (brisage 50 %, seuils, mes prix)';
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (runes simples + fusion, prix des runes Ombre)';
   render();
 })();
