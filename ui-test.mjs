@@ -61,6 +61,12 @@ try {
   const h3 = await ev(`[...document.querySelectorAll('h3')].map(h => h.textContent).join(' | ')`);
   check('clic sur Prune et Émeraude : issues affichées', h3.includes('Prune × Émeraude'), h3);
   // 6. tous les onglets sans erreur
+  await ev(`location.hash = '#brisage'`); await sleep(1500);
+  const ddRows = await ev(`[...document.querySelectorAll('h2')].map(x => x.textContent).join(' | ') + ' #' + document.querySelectorAll('main table')[0].querySelectorAll('tbody tr').length`);
+  check('brisage : section dragodindes avec 66 lignes', ddRows.includes('briser ou extraire') && ddRows.endsWith('#66'), ddRows);
+  await ev(`(() => { const e = document.querySelector('[data-k="runePrices.Rune Po"]'); e.value = '200000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1500);
+  const prune = await ev(`[...document.querySelectorAll('main tr')].map(t => t.textContent).find(t => t.startsWith('Prune1') || t.startsWith('Prune9'))`);
+  check('prix de la Rune Po saisi : la Prune devient chiffrée', prune && !prune.includes('?'), prune);
   for (const t of ['objectif', 'chemin', 'niveau', 'renta', 'final', 'prix', 'brisage', 'regles']) {
     await ev(`location.hash = '#${t}'`); await sleep(900);
     const bad = await ev(`document.querySelector('main').textContent.includes('Erreur de calcul') || document.querySelector('main').textContent.length < 300`);

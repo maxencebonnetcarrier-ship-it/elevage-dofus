@@ -104,5 +104,24 @@ t('brisage (vidéo) : 0,82 rune Ga PM au niveau 100, 0,018 au niveau 1', () => {
   const b = Object.assign({}, DEF.brisage);
   near(E.brisage(100, b).runes, 0.82, 1e-9); near(E.brisage(1, b).runes, 0.0181, 1e-6);
 });
+t('brisage DD : bonus selon le niveau (75 % au niveau 100)', () => {
+  const b = DEF.ddBrise;
+  near(E.statAtLevel(400, 100, b), 300, 1e-9); near(E.statAtLevel(400, 200, b), 400, 1e-9); near(E.statAtLevel(400, 150, b), 350, 1e-9); near(E.statAtLevel(400, 1, b), 3, 1e-9);
+});
+t('brisage DD : Prune niveau 200 → 1,64 Rune Po et 6 Ra Vi + 1 Pa Vi + 2,7 Vi (recalcul à la main)', () => {
+  const r = E.brisageDD('Prune', 200, S);
+  const po = r.lines.find(l => l.stat === 'Portée'), vi = r.lines.find(l => l.stat === 'Vitalité');
+  near(po.weight, (3 * 2 * 51 * 60 / 200 + 1) * 0.9, 1e-9); near(po.runes[0].n, po.weight / 51, 1e-9);
+  near(vi.weight, (3 * 400 * 0.2 * 60 / 200 + 1) * 0.9, 1e-9);
+  assert.deepStrictEqual(vi.runes.map(x => [x.rune, +x.n.toFixed(2)]), [['Rune Ra Vi', 6], ['Rune Pa Vi', 1], ['Rune Vi', 2.7]]);
+  near(r.kamas, (6 * 1317 + 442 + 2.7 * 135) * 0.97, 1e-6);
+  near(r.extract, 9 * 23000 * 0.97, 1e-6);
+  assert.strictEqual(r.missing, true); assert.strictEqual(r.breakEven.rune, 'Rune Po');
+  near(r.breakEven.price, (r.extract + r.xp - r.kamas) / (po.baseCount * 0.97), 1e-6);
+});
+t('brisage DD : les 66 couleurs ont des bonus, gén. 1 sans neurone', () => {
+  for (const X of E.NAMES) { assert.ok(Object.keys(E.BR.dd[X]).length >= 2, X); }
+  const r = E.brisageDD('Rousse', 100, S); assert.strictEqual(r.extract, 0); assert.ok(r.gain > 0);
+});
 console.log(`\n${n - fails}/${n} tests verts`);
 process.exit(fails ? 1 : 0);

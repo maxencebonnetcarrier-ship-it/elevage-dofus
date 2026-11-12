@@ -14,7 +14,7 @@
       var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (saved && saved.version === d.version) {
         Object.keys(saved).forEach(function (k) {
-          if (k === 'fuel' || k === 'brisage' || k === 'optiBuy') d[k] = Object.assign(d[k], saved[k]); else d[k] = saved[k];
+          if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'ddBrise') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
         });
       }
     } catch (e) { /* réglages illisibles : on garde les valeurs par défaut */ }
@@ -111,7 +111,7 @@
 
   // ------------------------------------------------------------ onglets
   var TABS = [['objectif', '🎯 Gén. 10 : ce qu’il te faut'], ['chemin', '🧬 Chemin étape par étape'], ['niveau', '📈 Niveau des parents'], ['renta', '⏱️ Rentabilité dans le temps'],
-              ['final', '🎲 Dernier croisement'], ['prix', '💰 Prix et réglages'], ['brisage', '⚒️ Brisage Muldo / Volkorne'], ['regles', '📖 Règles et sources']];
+              ['final', '🎲 Dernier croisement'], ['prix', '💰 Prix et réglages'], ['brisage', '⚒️ Brisage (DD, Muldo, Volkorne)'], ['regles', '📖 Règles et sources']];
   function renderTabs() {
     if (!TABS.some(function (t) { return t[0] === TAB; })) TAB = 'objectif';
     document.getElementById('tabs').innerHTML = TABS.map(function (t) {
@@ -413,6 +413,47 @@
   }
 
   // ------------------------------------------------------------ 6. brisage
+  function brisageDDSection() {
+    var s = compute().s, b = S.ddBrise, L = Math.max(1, Math.min(200, Math.round(b.L || 100)));
+    var out = h('h2', null, 'Dragodindes : briser ou extraire ?');
+    out += '<p class="lead">Briser une dragodinde détruit la monture, comme l’extraire. La page compare les deux, pour une monture <b>déjà produite</b> (un raté, un surplus) : ' +
+      'runes obtenues selon ses bonus, moins l’XP pour la monter au niveau de brisage, contre ses neurones à l’extraction. ' +
+      '<b>Les dragodindes capturées (« sauvages ») n’ont aucun bonus</b> : leur brisage ne donne rien.</p>';
+    out += '<div class="form">' + field('Niveau de brisage', 'ddBrise.L', 'number', { min: 1, max: 200, step: 1 }) +
+      field('Coefficient de brisage (%)', 'ddBrise.coef', 'number', { min: 1, max: 4000, note: 'propre à chaque serveur ; 90 = calé sur la vidéo' }) +
+      field('Niveau de l’objet monture', 'ddBrise.itemLevel', 'number', { min: 1, max: 200, step: 1, note: 'vidéo : 60 (niveau pour équiper une monture)' }) +
+      field('Part du bonus atteinte au niveau 100', 'ddBrise.curve100', 'number', { min: 0, max: 1, step: 0.05, note: '0,75 = 300 Vitalité sur 400' }) + '</div>';
+    var rows = E.NAMES.map(function (X) { return E.brisageDD(X, L, s); });
+    var priced = rows.filter(function (r) { return !r.missing; }).sort(function (a, c) { return c.gain - a.gain; });
+    var unpriced = rows.filter(function (r) { return r.missing; }).sort(function (a, c) { return a.breakEven.price - c.breakEven.price; });
+    var win = priced.filter(function (r) { return r.gain > 0; }), sure = unpriced.filter(function (r) { return r.gain > 0; });
+    out += '<div class="box verdict">Au niveau ' + L + ' : ' + (!priced.length ? '' : 'avec les prix connus, <b>' + win.length + '</b> dragodinde' + (win.length > 1 ? 's' : '') + ' sur ' + priced.length + ' chiffrée' + (priced.length > 1 ? 's' : '') +
+      ' rapportent plus brisées qu’extraites' + (win.length ? ' (la meilleure : <b>' + esc(win[0].X) + '</b>, +' + f(win[0].gain) + ' kamas)' : '') + '. ') +
+      (sure.length ? '<b>' + sure.length + '</b> ' + (priced.length ? 'autres ' : 'dragodindes ') + 'sont rentables même sans connaître le prix de leur rune principale (surtout les gén. 1 élevées, qui ne donnent aucun neurone). ' : '') +
+      (unpriced.length - sure.length) + ' ' + (sure.length ? 'autres ' : 'dragodindes ') + 'attendent le prix d’une rune : la colonne « Rentable si » dit le prix à partir duquel le brisage gagne.</div>';
+    function runesTxt(r) { return r.lines.map(function (l) { return l.runes.map(function (x) { return f(x.n, x.n < 10 ? 1 : 0) + ' ' + esc(x.rune.replace('Rune ', '')); }).join(' + '); }).join(' · '); }
+    function bonusTxt(r) { return r.lines.map(function (l) { return f(l.value, l.value < 10 ? 1 : 0) + ' ' + esc(l.stat); }).join(', '); }
+    var trs = priced.concat(unpriced).map(function (r) {
+      var be = r.breakEven;
+      return { cls: r.gain > 0 ? 'best' : '', cells: ['<b>' + esc(r.X) + '</b>', r.gen, bonusTxt(r), '<span class="mini">' + runesTxt(r) + '</span>',
+        r.missing ? '<span class="dim">' + f(r.kamas) + ' + ?</span>' : f(r.kamas), f(r.xp), f(r.extract),
+        r.missing ? (r.gain > 0 ? '<b class="ok">≥ ' + f(r.gain) + '</b>' : '—') : '<b class="' + (r.gain >= 0 ? 'ok' : 'ko') + '">' + f(r.gain) + '</b>',
+        be ? (be.price <= 0 ? '<span class="ok">déjà rentable</span>' : esc(be.rune) + ' ≥ <b>' + f(be.price) + '</b>') : '—'] };
+    });
+    out += table(['Dragodinde', 'Gén.', 'Bonus au niveau ' + L, 'Runes obtenues', 'Kamas des runes', 'Coût de l’XP', 'Extraction (neurones)', 'Brisage − extraction', 'Rentable si'], trs, ['l', '', 'l', 'l']);
+    out += '<p class="note">« Rentable si » : prix de vente de la rune simple (taxe déduite) à partir duquel briser rapporte autant qu’extraire, en comptant 0 pour les autres runes sans prix. ' +
+      'Une Rune Pa ou Ra vaut 3 ou 10 runes simples : compare avec son prix divisé par 3 ou 10. Coût de l’XP : carburant « ' + esc(S.xpFam) + ' », partagé entre les ' + S.perEnclos + ' montures de l’enclos.</p>';
+    out += h('h3', null, 'Prix des runes (Ombre) — mets les tiens');
+    var rp = Object.keys(S.runePrices).map(function (k) {
+      return [esc(k), '<input type="number" step="any" data-k="runePrices.' + k + '" data-num="1" value="' + (S.runePrices[k] == null ? '' : S.runePrices[k]) + '" placeholder="?">'];
+    });
+    var half = Math.ceil(rp.length / 2);
+    out += '<div class="grid2"><div>' + table(['Rune', 'Prix'], rp.slice(0, half)) + '</div><div>' + table(['Rune', 'Prix'], rp.slice(half)) + '</div></div>';
+    out += '<p class="note">Repères trouvés : Rune Vi 135, Pa Vi 442, Ra Vi 1 317 (Kourial, avril 2026) ; Ga PA 22 800 et Ga PM 20 000 (vidéo). Aucun relevé public pour les autres runes sur Ombre. ' +
+      'Poids des caractéristiques : DofusDB (Vitalité 0,2 · Initiative 0,1 · Force, Intelligence, Chance, Agilité 1 · Puissance 2 · Prospection 3 · Soins et Critique 10 · Invocation 30 · Portée 51). ' +
+      'Bonus maximum : dofuspourlesnoobs (400 Vitalité ; 2 Portée pour la Prune ; 14 % Critique pour l’Émeraude…).</p>';
+    return out;
+  }
   function tabBrisage() {
     var b = S.brisage, rows = [], fine = [], places = S.enclos * b.perEnclos, capRate = 60 / Math.max(0.1, b.captureMin || 5);
     for (var L = 1; L <= 200; L++) {
@@ -424,7 +465,7 @@
     }
     var best = function (k) { return fine.filter(function (r) { return r[k] != null && isFinite(r[k]); }).reduce(function (m, r) { return r[k] > m[k] ? r : m; }); };
     var bp = best('pct'), bh = best('perHour'), bg = best('profit');
-    var out = h('h2', null, 'Brisage Muldo / Volkorne : à quel niveau briser ?');
+    var out = brisageDDSection() + '<hr style="border:0;border-top:1px solid var(--line);margin:26px 0">' + h('h2', null, 'Muldo / Volkorne : à quel niveau briser ? (méthode de la vidéo)');
     out += '<p class="lead">Reprise de la méthode de la vidéo : on monte les montures capturées à un niveau, puis on les brise pour des runes Ga PM ou Ga PA. ' +
       'Formule de la vidéo : runes = (3 × niveau/100 × poids × 60 / 200 + 1) / 100, ce qui donne 0,82 rune Ga PM au niveau 100 (≈ 80 % observé).</p>';
     out += '<div class="form">' +

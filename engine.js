@@ -5,6 +5,7 @@
   'use strict';
   var D = (typeof DD_DATA !== 'undefined') ? DD_DATA : require('./data.js');
   var TREE = D.tree, XP = D.xp;
+  var BR = (typeof DD_BRISE !== 'undefined') ? DD_BRISE : (typeof require !== 'undefined' ? require('./brisage-data.js') : null);
   var NAMES = Object.keys(TREE);
   var GEN1 = NAMES.filter(function (n) { return TREE[n].gen === 1; });
   // génétons gagnés par parent selon SA génération (3.7, doublés) — dofuspourlesnoobs
@@ -363,6 +364,57 @@
              bestPerDay: ok.reduce(function (m, r) { return !m || r.perDay > m.perDay ? r : m; }, null) };
   }
 
+  // ---------------------------------------------------------------- brisage des dragodindes
+  /* Bonus au niveau L : les guides donnent la valeur maximale (niveau 200) et disent que les bonus montent vite jusqu'au 100 puis lentement.
+     Modèle : part c (75 % par défaut = 300 Vitalité sur 400) atteinte linéairement au niveau 100, le reste linéairement de 100 à 200.
+     Poids extrait d'une ligne = (3 × valeur × poids × niveau de l'objet / 200 + 1) × coefficient (formule de la vidéo) ;
+     les runes sortent de la plus grosse à la plus petite (Ra, puis Pa, puis simple, la dernière en moyenne). */
+  function statAtLevel(max, L, b) {
+    var c = num(b.curve100); if (c === null) c = 0.75;
+    L = clamp(L, 1, 200);
+    return L <= 100 ? max * c * L / 100 : max * (c + (1 - c) * (L - 100) / 100);
+  }
+  function runeLine(stat, value, b, prices, tax) {
+    var st = BR.stats[stat], W = (3 * value * st.weight * b.itemLevel / 200 + 1) * b.coef / 100;
+    var rs = st.runes.slice().sort(function (x, y) { return y[1] - x[1]; }), left = W, kamas = 0, missing = false, got = [];
+    rs.forEach(function (r, i) {
+      var rw = r[1] * st.weight, n = i === rs.length - 1 ? left / rw : Math.floor(left / rw + 1e-9);
+      if (n <= 0) return;
+      left -= n * rw;
+      var pr = num(prices[r[0]]);
+      if (pr === null) missing = true; else kamas += n * pr * (1 - tax);
+      got.push({ rune: r[0], n: n, price: pr });
+    });
+    var base = st.runes[0];
+    return { stat: stat, value: value, weight: W, runes: got, kamas: kamas, missing: missing, baseRune: base[0], baseCount: W / (base[1] * st.weight) };
+  }
+  function brisageDD(X, L, s) {
+    var b = s.ddBrise, prices = s.runePrices || {}, tax = num(s.tax) || 0, bonus = BR.dd[X] || {};
+    var lines = Object.keys(bonus).map(function (st) { return runeLine(st, statAtLevel(bonus[st], L, b), b, prices, tax); });
+    var kamas = lines.reduce(function (a, l) { return a + l.kamas; }, 0), missing = lines.filter(function (l) { return l.missing; });
+    var xp = levelCost(1, L, s), hours = levelHours(1, L, s);
+    var extract = TREE[X].gen >= 2 ? TREE[X].gen * (num(s.neurone) || 0) * (1 - tax) : 0;
+    var gain = kamas - (xp || 0) - extract;
+    // prix de rentabilité : la ligne sans prix la plus lourde, les autres lignes sans prix comptées 0
+    var be = null;
+    if (missing.length) {
+      var key = missing.slice().sort(function (x, y) { return y.weight - x.weight; })[0];
+      var need = extract + (xp || 0) - kamas;
+      be = { rune: key.baseRune, stat: key.stat, count: key.baseCount, price: need <= 0 ? 0 : need / (key.baseCount * (1 - tax)) };
+    }
+    return { X: X, gen: TREE[X].gen, L: L, lines: lines, kamas: kamas, missing: missing.length > 0, xp: xp, hours: hours, extract: extract, gain: gain, breakEven: be };
+  }
+  // meilleur niveau de brisage (gain maximal, prix connus) sur une grille de niveaux
+  function bestBrisageLevel(X, s) {
+    var best = null;
+    for (var L = 1; L <= 200; L += (L < 10 ? 1 : 5)) {
+      var r = brisageDD(X, L, s);
+      if (r.missing) return null;
+      if (!best || r.gain > best.gain) best = r;
+    }
+    return best;
+  }
+
   // ---------------------------------------------------------------- brisage Muldo / Volkorne (formule de la vidéo)
   function brisage(L, b) {
     var runes = (3 * (L / 100) * b.weight * b.itemLevel / 200 + 1) / b.divisor;
@@ -377,6 +429,6 @@
               OPTI: OPTI, LEVELS: LEVELS, recipe: recipe, pTarget: pTarget, outcomes: outcomes, recovery: recovery, drain: drain,
               xpPerHour: xpPerHour, refillCostPer1000: refillCostPer1000, xpBetween: xpBetween, levelHours: levelHours, levelCost: levelCost,
               fertHours: fertHours, fertCost: fertCost, prepHours: prepHours, optiCost: optiCost, plan: plan, unitCosts: unitCosts,
-              optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability };
+              optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);

@@ -43,6 +43,16 @@ var DD_DEFAULTS = {
     "Perte de sérénité": ["Grand Extrait de perte de Sérénité","Philtre de perte de Sérénité","Minuscule Potion de perte de Sérénité","Grand Élixir de perte de Sérénité"],
     "Expérience": ["Grand Extrait d'Expérience de monture","Philtre d'Expérience de monture","Grande Potion d'Expérience de monture","—"]
   },
+  // prix des runes : Vi / Pa Vi / Ra Vi = Kourial (dofus-calculator.fr, 01/04/2026) ; Ga PA / Ga PM = vidéo ; le reste à relever sur Ombre
+  runePrices: {
+    'Rune Vi': 135, 'Rune Pa Vi': 442, 'Rune Ra Vi': 1317, 'Rune Ga Pa': 22800, 'Rune Ga Pme': 20000,
+    'Rune Ini': null, 'Rune Pa Ini': null, 'Rune Ra Ini': null, 'Rune Fo': null, 'Rune Pa Fo': null, 'Rune Ra Fo': null,
+    'Rune Ine': null, 'Rune Pa Ine': null, 'Rune Ra Ine': null, 'Rune Cha': null, 'Rune Pa Cha': null, 'Rune Ra Cha': null,
+    'Rune Age': null, 'Rune Pa Age': null, 'Rune Ra Age': null, 'Rune Pui': null, 'Rune Pa Pui': null, 'Rune Ra Pui': null,
+    'Rune Prospe': null, 'Rune Pa Prospe': null, 'Rune So': null, 'Rune Invo': null, 'Rune Cri': null, 'Rune Po': null
+  },
+  // brisage des dragodindes : niveau, niveau d'objet, coefficient (90 % recale la formule sur les 0,82 rune Ga PM de la vidéo), part du bonus au niveau 100
+  ddBrise: { L: 100, itemLevel: 60, coef: 90, curve100: 0.75 },
   brisage: {
     rune: 'PM',
     weight: 90,
