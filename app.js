@@ -467,7 +467,7 @@
     var vals = E.scrollValues(S), best = vals[0], by = {};
     vals.forEach(function (v) { by[v.stat + '|' + v.size] = v; });
     var out = h('h3', null, 'Parchemins : que vaut un généton ?');
-    out += table(['Caractéristique'].concat(E.SCROLLS.map(function (x) { return x[0] + ' <span class="mini">(' + x[1] + ' gén. · +' + x[3] + ' jusqu’à ' + x[2] + ')</span>'; })), E.SCROLL_STATS.map(function (st) {
+    out += table(['Caractéristique'].concat(E.SCROLLS.map(function (x) { return x[0] + '<br><span class="mini">(' + x[1] + ' gén. · +' + x[3] + ' jusqu’à ' + x[2] + ')</span>'; })), E.SCROLL_STATS.map(function (st) {
       return [esc(st)].concat(E.SCROLLS.map(function (x, i) {
         var v = by[st + '|' + i]; if (!v) return '<span class="warnc">prix ?</span>';
         var t = f(v.perGeneton) + ' <span class="mini">(' + f(v.price) + ')</span>';
