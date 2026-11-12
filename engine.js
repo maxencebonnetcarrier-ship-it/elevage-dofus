@@ -15,11 +15,19 @@
   var CAPS = [80000, 140000, 180000, 200000];
   var RATE = [60, 120, 180, 240];            // points (= XP) par minute : 10 / 20 / 30 / 40 toutes les 10 s
   var JAUGES = ['Endurance', 'Maturité', 'Amour', 'Gain de sérénité', 'Perte de sérénité', 'Expérience'];
-  // Optimakina de Dragodinde : coût du craft hors Queue de dragodinde sauvage (classeur, prix Ombre/Kourial) et nombre de Queues
+  /* Optimakina de Dragodinde : recette (classeur, feuille « Makinas ») = 1 ressource de boss, 10 Pépites, Sueur, Pics, Queues de dragodinde sauvage ;
+     la gén. 10 prend une Queue de Glourséleste à la place de la ressource de boss. Le coût vient de tes prix d'ingrédients (s.ingPrices),
+     des Queues (s.queuePrice) et de la Queue de Glourséleste (s.glourPrice). base = ancien coût hors Queues au prix HDV (repère). */
   var OPTI = {
-    2: { lvl: 29, base: 8400, queues: 0 }, 3: { lvl: 49, base: 9630, queues: 1 }, 4: { lvl: 69, base: 8327, queues: 1 },
-    5: { lvl: 89, base: 8199, queues: 1 }, 6: { lvl: 109, base: 13328, queues: 2 }, 7: { lvl: 129, base: 8856, queues: 2 },
-    8: { lvl: 149, base: 12468, queues: 2 }, 9: { lvl: 167, base: 25658, queues: 3 }, 10: { lvl: 185, base: 10284, queues: 3, glour: 1 }
+    2: { lvl: 29, base: 8400, queues: 0, ing: { 'Fémur du Chafer Rōnin': 1, 'Pépite': 10, 'Sueur de dragodinde': 1, 'Pic de dragodinde dorée': 1 } },
+    3: { lvl: 49, base: 9630, queues: 1, ing: { 'La cambriole pour les Nuls': 1, 'Pépite': 10, 'Sueur de dragodinde': 1, 'Pic de dragodinde dorée': 1 } },
+    4: { lvl: 69, base: 8327, queues: 1, ing: { 'Pierre du Craqueleur Légendaire': 1, 'Pépite': 10, 'Sueur de dragodinde': 1, 'Pic de dragodinde dorée': 1, 'Pic de dragodinde': 1 } },
+    5: { lvl: 89, base: 8199, queues: 1, ing: { 'Groin de Dragon Cochon': 1, 'Pépite': 10, 'Sueur de dragodinde': 1, 'Pic de dragodinde dorée': 2, 'Pic de dragodinde': 1 } },
+    6: { lvl: 109, base: 13328, queues: 2, ing: { 'Bourgeon explosif de Damadrya': 1, 'Pépite': 10, 'Sueur de dragodinde': 1, 'Pic de dragodinde dorée': 2, 'Pic de dragodinde': 1 } },
+    7: { lvl: 129, base: 8856, queues: 2, ing: { 'Laine du Royalmouth': 1, 'Pépite': 10, 'Sueur de dragodinde': 1, 'Pic de dragodinde dorée': 2, 'Pic de dragodinde': 2 } },
+    8: { lvl: 149, base: 12468, queues: 2, ing: { 'Pistil du Tynril': 1, 'Pépite': 10, 'Sueur de dragodinde': 1, 'Pic de dragodinde dorée': 3, 'Pic de dragodinde': 2 } },
+    9: { lvl: 167, base: 25658, queues: 3, ing: { "Mèche Rebelle d'Hell Mina": 1, 'Pépite': 10, 'Sueur de dragodinde': 2, 'Pic de dragodinde dorée': 3, 'Pic de dragodinde': 2 } },
+    10: { lvl: 185, base: 10284, queues: 3, glour: 1, ing: { 'Pépite': 10, 'Sueur de dragodinde': 3, 'Pic de dragodinde dorée': 3, 'Pic de dragodinde': 3 } }
   };
 
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
@@ -152,14 +160,19 @@
     var f = fertHours(s), lv = levelHours(startLvl, L, s);
     return f + Math.max(0, lv - f / 2);
   }
-  function optiCost(gen, s) {
-    var buy = num(s.optiBuy && s.optiBuy[gen]);
-    if (buy !== null) return buy;
+  // coût du craft avec tes prix : ingrédients (0 = droppé par toi) + Queues + Queue de Glourséleste ; null si un prix utile manque
+  function optiCraft(gen, s) {
     var o = OPTI[Math.max(2, gen)]; if (!o) return null;
+    var P = s.ingPrices || {}, t = 0;
+    for (var k in o.ing) { var pr = num(P[k]); if (pr === null) return null; t += o.ing[k] * pr; }
     var q = num(s.queuePrice), gl = num(s.glourPrice);
     if (o.queues && q === null) return null;
     if (o.glour && gl === null) return null;
-    return o.base + o.queues * (q || 0) + (o.glour ? gl : 0);
+    return t + o.queues * (q || 0) + (o.glour ? gl : 0);
+  }
+  function optiCost(gen, s) {   // ton prix d'achat s'il est saisi, sinon le craft
+    var buy = num(s.optiBuy && s.optiBuy[gen]);
+    return buy !== null ? buy : optiCraft(gen, s);
   }
 
   // ---------------------------------------------------------------- plan vers une cible
@@ -360,9 +373,29 @@
   // ---------------------------------------------------------------- rentabilité dans le temps (carburants × durée)
   /* Valeur du résultat : le bébé gén. 10 extrait (10 neurones, net de taxe) + tous les génétons gagnés en chemin et au dernier croisement.
      Pour chaque couple (carburant de l'XP, carburant de fécondité), on cherche la meilleure stratégie et on compare durée, kamas et bénéfice par jour. */
+  /* Valeur d'un généton : le parchemin de caractéristique qui rapporte le plus de kamas par généton (prix HDV net de taxe ÷ coût).
+     Coûts 3.7 chez Eugène Éton : Petit 10, Parchemin 30, Grand 70, Puissant 170 (dofuspourlesnoobs, présentation de la màj 3.7).
+     Une valeur saisie à la main (s.genetonValue) l'emporte. */
+  var SCROLLS = [['Petit Parchemin', 10], ['Parchemin', 30], ['Grand Parchemin', 70], ['Puissant Parchemin', 170]];
+  var SCROLL_STATS = ['Vitalité', 'Sagesse', 'Force', 'Intelligence', 'Chance', 'Agilité'];
+  function scrollName(size, stat) { return size + (/^[AEÉIOU]/.test(stat) ? " d'" : ' de ') + stat; }
+  function scrollValues(s) {
+    var tax = num(s.tax) || 0, P = s.scrollPrices || {}, rows = [];
+    SCROLL_STATS.forEach(function (st) {
+      SCROLLS.forEach(function (sc, i) {
+        var pr = num((P[st] || [])[i]); if (pr === null) return;
+        rows.push({ stat: st, size: i, name: scrollName(sc[0], st), cost: sc[1], price: pr, perGeneton: pr * (1 - tax) / sc[1] });
+      });
+    });
+    return rows.sort(function (a, b) { return b.perGeneton - a.perGeneton; });
+  }
+  function genetonValue(s) {
+    var o = num(s.genetonValue); if (o !== null) return o;
+    var r = scrollValues(s); return r.length ? r[0].perGeneton : 0;
+  }
   function resultValue(pl, s) {
     var neur = (num(s.neurone) || 0) * TREE[pl.target].gen * (1 - (num(s.tax) || 0));
-    var gen = pl.genetons * (num(s.genetonValue) || 0);
+    var gen = pl.genetons * genetonValue(s);
     return { neurones: neur, genetons: gen, total: neur + gen };
   }
   function profitability(target, s, obj) {
@@ -476,7 +509,8 @@
   var API = { TREE: TREE, XP: XP, NAMES: NAMES, GEN1: GEN1, GENETONS: GENETONS, FAMILIES: FAMILIES, CAPS: CAPS, RATE: RATE, JAUGES: JAUGES,
               OPTI: OPTI, LEVELS: LEVELS, recipe: recipe, pTarget: pTarget, outcomes: outcomes, recovery: recovery, drain: drain,
               xpPerHour: xpPerHour, refillCostPer1000: refillCostPer1000, xpBetween: xpBetween, levelHours: levelHours, levelCost: levelCost,
-              fertHours: fertHours, fertCost: fertCost, cheapestFrom: cheapestFrom, baseDeposit: baseDeposit, depositTotal: depositTotal, prepHours: prepHours, optiCost: optiCost, plan: plan, unitCosts: unitCosts,
-              optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel, bestPerSimple: bestPerSimple };
+              fertHours: fertHours, fertCost: fertCost, cheapestFrom: cheapestFrom, baseDeposit: baseDeposit, depositTotal: depositTotal, prepHours: prepHours, optiCost: optiCost, optiCraft: optiCraft, plan: plan, unitCosts: unitCosts,
+              optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel, bestPerSimple: bestPerSimple,
+              SCROLLS: SCROLLS, SCROLL_STATS: SCROLL_STATS, scrollName: scrollName, scrollValues: scrollValues, genetonValue: genetonValue };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);

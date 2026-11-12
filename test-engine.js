@@ -7,6 +7,8 @@ let n = 0, fails = 0;
 function t(name, fn) { n++; try { fn(); console.log('OK  ' + name); } catch (e) { fails++; console.log('KO  ' + name + ' — ' + e.message); } }
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg || ''} obtenu ${a}, attendu ${b} ± ${tol}`);
 const S = Object.assign({}, JSON.parse(JSON.stringify(DEF)), { refillH: 24 / DEF.connexions });
+// mêmes réglages, carburants au prix HDV de référence (les défauts sont à 0 : l'utilisateur fabrique ses carburants)
+const SR = Object.assign({}, S, { fuel: JSON.parse(JSON.stringify(DEF.fuelRef)) });
 
 t('table d’XP : niveaux 100, 167, 200', () => { assert.strictEqual(E.XP[1], 0); assert.strictEqual(E.XP[2], 19); assert.strictEqual(E.XP[100], 172668); assert.strictEqual(E.XP[167], 570057); assert.strictEqual(E.XP[200], 867582); });
 t('arbre : 66 dragodindes, gén. 7 et 9 conformes', () => {
@@ -49,9 +51,16 @@ t('coût d’une recharge Élixir : chaque tranche avec la famille la moins chè
   near(E.refillCostPer1000('Élixir', 12, row), exp, 1e-6);
   assert.strictEqual(E.refillCostPer1000('Élixir', 12, [10, 100, 50, null]), null);
 });
-t('fécondité : 24 h avec 2 connexions, ~146 kamas par monture aux Extraits', () => {
-  near(E.fertHours(S), 24, 1e-9); near(E.fertCost(S), 146.0, 0.2);
-  near(E.levelHours(1, 200, S), 867582 / 3600, 1e-6); near(E.levelCost(1, 200, S), 867582 / 1000 * 12.5 / 10, 1e-6);
+t('fécondité : 24 h avec 2 connexions, ~146 kamas par monture aux Extraits (prix HDV de référence)', () => {
+  near(E.fertHours(SR), 24, 1e-9); near(E.fertCost(SR), 146.0, 0.2);
+  near(E.levelHours(1, 200, SR), 867582 / 3600, 1e-6); near(E.levelCost(1, 200, SR), 867582 / 1000 * 12.5 / 10, 1e-6);
+});
+t('carburants à 0 par défaut : aucun coût de carburant, mais le même plan au prix HDV en a un', () => {
+  near(E.fertCost(S), 0, 1e-12); near(E.levelCost(1, 200, S), 0, 1e-12); near(E.depositTotal(Object.assign({}, S, { fertFam: 'Potion', xpFam: 'Potion' })), 0, 1e-12);
+  const o = E.optimize('Prune et Rousse', S, 'jours'), pl = o.plan, pr = E.plan('Prune et Rousse', o.policy, SR);
+  assert.strictEqual(pl.fuelK + pl.levK, 0); assert.strictEqual(pl.missing.length, 0);
+  assert.ok(pr.fuelK + pr.levK > 0, 'au prix HDV : ' + (pr.fuelK + pr.levK));
+  near(pr.optiK, pl.optiK, 1e-6); near(pr.filetK, pl.filetK, 1e-6);   // seul le carburant change
 });
 // comptage indépendant des montures de base (récurrence directe sur l'arbre)
 function inst(m, mult, acc) { if (E.TREE[m].gen === 1) { acc[m] = (acc[m] || 0) + mult; return acc; } E.TREE[m].p.forEach(p => inst(p, mult, acc)); return acc; }
@@ -136,7 +145,7 @@ t('brisage DD, modèle jeu (50 %, niveau de la monture, bonus max) : Prune nivea
   assert.deepStrictEqual(vi.runes.map(x => [x.rune, +x.n.toFixed(2)]), [['Rune Vi', 120.5]]);
   near(vi.fuse.n, 120.5 / 9, 1e-9);
   near(r.kamas, 120.5 * 1044 / 9 * (1 - S.tax), 1e-6);
-  near(r.extract, 9 * 23000 * (1 - S.tax), 1e-6);
+  near(r.extract, 9 * S.neurone * (1 - S.tax), 1e-6); assert.strictEqual(S.neurone, 35000);
   assert.strictEqual(r.missing, true); assert.strictEqual(r.breakEven.rune, 'Rune Po');
   near(r.breakEven.price, (r.extract + r.xp - r.kamas) / (po.baseCount * (1 - S.tax)), 1e-6);
 });
@@ -151,18 +160,37 @@ t('fusion : chaque rune simple vaut le meilleur de son prix, Pa ÷ 3 et Ra ÷ 9 
   assert.deepStrictEqual(pick('Soins'), ['Rune Pa So', 248.7]);
   assert.strictEqual(E.bestPerSimple({ runes: [['X', 1]] }, {}), null);
 });
+t('parchemins : un généton vaut le parchemin le plus rentable (prix × (1 − taxe) ÷ coût), un chiffre saisi l’emporte', () => {
+  const v = E.scrollValues(S);
+  assert.strictEqual(v.length, 24);
+  assert.strictEqual(v[0].name, "Petit Parchemin d'Intelligence"); near(v[0].perGeneton, 10009 * (1 - S.tax) / 10, 1e-9);
+  assert.strictEqual(v[1].name, 'Grand Parchemin de Vitalité'); near(v[1].perGeneton, 69985 * (1 - S.tax) / 70, 1e-9);
+  near(E.genetonValue(S), 10009 * 0.99 / 10, 1e-9);
+  near(E.genetonValue(Object.assign({}, S, { genetonValue: 150 })), 150, 1e-12);
+  assert.strictEqual(E.genetonValue(Object.assign({}, S, { scrollPrices: {} })), 0);
+  const pl = { target: 'Prune et Rousse', genetons: 1000 };
+  near(E.resultValue(pl, S).genetons, 1000 * 10009 * 0.99 / 10, 1e-6);
+});
+t('Optimakinas : craft à tes prix (10 Pépites à 5 000, drops à 0, Queue de Glourséleste 30 000 pour la gén. 10)', () => {
+  for (let g = 2; g <= 9; g++) near(E.optiCraft(g, S), 10 * 5000 + E.OPTI[g].queues * S.queuePrice, 1e-9);
+  near(E.optiCraft(10, S), 10 * 5000 + 30000, 1e-9);
+  near(E.optiCost(10, Object.assign({}, S, { optiBuy: { 10: 90000 } })), 90000, 1e-12);   // un prix d'achat saisi l'emporte
+  const s = Object.assign({}, S, { ingPrices: Object.assign({}, S.ingPrices, { 'Pistil du Tynril': 12000 }), queuePrice: 1000 });
+  near(E.optiCraft(8, s), 10 * 5000 + 12000 + 2 * 1000, 1e-9);
+  assert.strictEqual(E.optiCraft(9, Object.assign({}, S, { ingPrices: Object.assign({}, S.ingPrices, { 'Pépite': null }) })), null);
+});
 t('seuils : la fécondité prend le carburant le moins cher capable d’atteindre la tranche', () => {
-  const fuel = JSON.parse(JSON.stringify(S.fuel)); fuel['Endurance'] = [10, 300, 200, 400];   // Potion moins chère que Philtre
-  const s = Object.assign({}, S, { fuel, fertFam: 'Philtre' });
+  const fuel = JSON.parse(JSON.stringify(SR.fuel)); fuel['Endurance'] = [10, 300, 200, 400];   // Potion moins chère que Philtre
+  const s = Object.assign({}, SR, { fuel, fertFam: 'Philtre' });
   const exp = (20000 * 200 + 20000 * Math.min(50.9, 247.3) + 20000 * 134.3 + 3000 * 263.5 + 3000 * 153.7) / 1000 / 10;
   near(E.fertCost(s), exp, 1e-6);
-  near(E.fertCost(Object.assign({}, S, { fertFam: 'Extrait' })), 146.0, 0.2);
+  near(E.fertCost(Object.assign({}, SR, { fertFam: 'Extrait' })), 146.0, 0.2);
 });
 t('mise de départ : socle sous le seuil, au moins cher par tranche', () => {
-  near(E.baseDeposit('Extrait', S.fuel['Amour']), 0, 1e-12);
-  near(E.baseDeposit('Philtre', S.fuel['Amour']), 80 * 3.4, 1e-9);
-  near(E.baseDeposit('Potion', S.fuel['Endurance']), 80 * 18.7 + 60 * 180.8, 1e-9);
-  const s = Object.assign({}, S, { fertFam: 'Philtre', xpFam: 'Potion', enclos: 2 });
+  near(E.baseDeposit('Extrait', SR.fuel['Amour']), 0, 1e-12);
+  near(E.baseDeposit('Philtre', SR.fuel['Amour']), 80 * 3.4, 1e-9);
+  near(E.baseDeposit('Potion', SR.fuel['Endurance']), 80 * 18.7 + 60 * 180.8, 1e-9);
+  const s = Object.assign({}, SR, { fertFam: 'Philtre', xpFam: 'Potion', enclos: 2 });   // chaque enclos a sa mise de départ
   near(E.depositTotal(s), 2 * (80 * 18.7 + 80 * 46.5 + 80 * 3.4 + (80 * 12.5 + 60 * 347)), 1e-6);
 });
 t('génétique : « parents seuls » retire les grands-parents et rend plus souvent un parent', () => {

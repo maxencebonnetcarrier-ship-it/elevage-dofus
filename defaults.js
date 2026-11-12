@@ -2,7 +2,7 @@
    Ombre sinon Kourial, novembre 2026) — coût en kamas pour 1 000 points de jauge, recette la moins chère de chaque famille.
    null = aucun prix connu (un ingrédient sans relevé). Tout se modifie dans l'onglet « Prix et réglages ». */
 var DD_DEFAULTS = {
-  version: 4,
+  version: 5,
   target: 'Prune et Rousse',
   objective: 'jours',
   enclos: 2,
@@ -21,13 +21,43 @@ var DD_DEFAULTS = {
   capMargin: 0,   // capture sûre à 100 % (gén. 1) : aucune marge par défaut
   seren: 6000,
   filet: 310,
-  neurone: 23000,
-  genetonValue: 100,
+  neurone: 35000,   // prix de l'utilisateur, 12/11/2026
+  // ce que donne l'extraction des autres espèces (prix de l'utilisateur, 12/11/2026) : Ambre pour le Muldo, Corne pour le Volkorne
+  extract: { 'Muldo': 153000, 'Volkorne': 57000 },
+  genetonValue: null,   // vide = calculée depuis les parchemins (le plus rentable par généton) ; un chiffre saisi l'emporte
+  // prix moyens HDV Ombre des parchemins de caractéristique (captures de l'utilisateur, 12/11/2026) : Petit, Parchemin, Grand, Puissant
+  // coût chez Eugène Éton (3.7) : 10, 30, 70, 170 génétons
+  scrollPrices: {
+    'Vitalité': [7942, 18578, 69985, 161792],
+    'Sagesse': [8546, 29841, 63857, 166670],
+    'Force': [5612, 21978, 47626, 140681],
+    'Intelligence': [10009, 28914, 69775, 127674],
+    'Chance': [7862, 23851, 57693, 144363],
+    'Agilité': [9306, 25258, 62291, 144736]
+  },
   tax: 0.01,   // taxe de l’hôtel des ventes : 1 % (constaté en jeu)
   queuePrice: 0,
-  glourPrice: null,
+  glourPrice: 30000,   // Queue de Glourséleste (Optimakina gén. 10), prix de l'utilisateur le 12/11/2026
+  // ingrédients des Optimakinas : Pépite 5 000 (prix de l'utilisateur, 12/11/2026) ; le reste, il le droppe → 0
+  // ressource propre de la Makina gén. 10 du Muldo et du Volkorne (prix de l'utilisateur, 12/11/2026) ; le reste : 10 Pépites + drops
+  makina10: { 'Muldo': 74000, 'Volkorne': 18000 },
+  ingPrices: {
+    'Pépite': 5000, 'Sueur de dragodinde': 0, 'Pic de dragodinde dorée': 0, 'Pic de dragodinde': 0,
+    'Fémur du Chafer Rōnin': 0, 'La cambriole pour les Nuls': 0, 'Pierre du Craqueleur Légendaire': 0, 'Groin de Dragon Cochon': 0,
+    'Bourgeon explosif de Damadrya': 0, 'Laine du Royalmouth': 0, 'Pistil du Tynril': 0, "Mèche Rebelle d'Hell Mina": 0
+  },
   optiBuy: {},
+  // carburants : 0 par défaut (tu les fabriques) ; mets un prix pour voir ce qu'ils coûtent. null = recette inexistante.
   fuel: {
+    'Endurance': [0, 0, 0, 0],
+    'Maturité': [0, 0, 0, null],
+    'Amour': [0, 0, 0, 0],
+    'Gain de sérénité': [0, 0, 0, 0],
+    'Perte de sérénité': [0, 0, 0, 0],
+    'Expérience': [0, 0, 0, null]
+  },
+  // repère HDV (classeur, relevés dofus-calculator.fr) : sert seulement à montrer ce que vaudraient tes carburants au prix du marché
+  fuelRef: {
     'Endurance': [18.7, 180.8, 1310.2, 2474.5],
     'Maturité': [46.5, 50.9, 247.3, null],
     'Amour': [3.4, 134.3, 1077.5, 3499.0],
@@ -64,7 +94,7 @@ var DD_DEFAULTS = {
     runePrice: 14139,   // repli ; la page prend le prix Ga PM / Ga PA de « Mes prix »
     tax: 0.01,
     filet: 310,
-    pricePerXp: 0.0125,
+    pricePerXp: 0,   // XP des montures : carburant à 0 par défaut (repère Extrait 0,0125 kama par point)
     perEnclos: 10,
     capLevel: 1,
     xpPerHour: 3600,

@@ -23,9 +23,22 @@
         if (saved.brisage && saved.brisage.runePrice === 20000) delete saved.brisage.runePrice;
         saved.version = 4;
       }
+      // version 4 → 5 : la valeur du généton se calcule depuis les prix des parchemins ; l'ancien 100 par défaut est retiré, un chiffre saisi reste
+      // et les carburants passent à 0 par défaut (tu les fabriques) : une case restée à l'ancien prix relevé repasse à 0, un prix saisi reste
+      if (saved && saved.version === 4) {
+        if (saved.genetonValue === 100) delete saved.genetonValue;
+        if (saved.glourPrice === null) delete saved.glourPrice;
+        if (saved.neurone === 23000) delete saved.neurone;
+        if (saved.fuel) Object.keys(saved.fuel).forEach(function (j) {
+          var ref = DD_DEFAULTS.fuelRef[j], row = saved.fuel[j];
+          if (ref && Array.isArray(row)) row.forEach(function (v, i) { if (v === ref[i] && ref[i] !== null) row[i] = 0; });
+        });
+        if (saved.brisage && saved.brisage.pricePerXp === 0.0125) delete saved.brisage.pricePerXp;
+        saved.version = 5;
+      }
       if (saved && saved.version === d.version) {
         Object.keys(saved).forEach(function (k) {
-          if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'ddBrise') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
+          if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'scrollPrices' || k === 'ingPrices' || k === 'makina10' || k === 'extract' || k === 'ddBrise') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
         });
       }
     } catch (e) { /* réglages illisibles : on garde les valeurs par défaut */ }
@@ -137,15 +150,24 @@
   }
   function pricePanel() {
     var s = eng(), n = 0;
-    var main = [['Neurone de dragodinde', 'neurone'], ['Valeur d’un généton', 'genetonValue'], ['Queue de dragodinde sauvage', 'queuePrice'],
+    var gAuto = 'auto : ' + f(E.genetonValue(Object.assign({}, S, { genetonValue: null })));
+    var main = [['Neurone de dragodinde', 'neurone'], ['Ambre (extraction Muldo)', 'extract.Muldo'], ['Corne de Volkorne (extraction)', 'extract.Volkorne'], ['Valeur d’un généton (vide = parchemins)', 'genetonValue', gAuto], ['Queue de dragodinde sauvage', 'queuePrice'],
                 ['Queue de Glourséleste', 'glourPrice'], ['Filet universel', 'filet'], ['Taxe HDV (0,01 = 1 %)', 'tax']];
     var out = '<details class="prices" id="mes-prix"' + (S.pricesOpen ? ' open' : '') + '><summary>💰 <b>Mes prix</b> <span class="mini">— modifie-les ici depuis n’importe quel onglet : tout se recalcule et reste gardé sur cet appareil</span></summary><div class="prices-in">';
-    out += '<div class="pgrid">' + main.map(function (m) { return '<label class="field">' + m[0] + numInput(m[1], getPath(m[1])) + '</label>'; }).join('') + '</div>';
+    out += '<div class="pgrid">' + main.map(function (m) { return '<label class="field">' + m[0] + numInput(m[1], getPath(m[1]), m[2]) + '</label>'; }).join('') + '</div>';
+    out += '<h4>Parchemins (prix HDV ; coût chez Eugène Éton : 10, 30, 70, 170 génétons)</h4>' + table(['Caractéristique'].concat(E.SCROLLS.map(function (x) { return x[0] + ' (' + x[1] + ')'; })), E.SCROLL_STATS.map(function (st) {
+      return [esc(st)].concat(E.SCROLLS.map(function (x, i) { return numInput('scrollPrices.' + st + '.' + i, (S.scrollPrices[st] || [])[i]); }));
+    }));
     out += '<h4>Optimakinas (prix d’achat ; vide = coût du craft)</h4><div class="pgrid">' + Object.keys(E.OPTI).map(function (g) {
-      var craft = E.OPTI[g].base + E.OPTI[g].queues * (+S.queuePrice || 0);
-      return '<label class="field">Gén. ' + g + numInput('optiBuy.' + g, S.optiBuy[g], 'craft ' + f(craft)) + '</label>';
+      var craft = E.optiCraft(+g, S);
+      return '<label class="field">Gén. ' + g + numInput('optiBuy.' + g, S.optiBuy[g], craft == null ? 'prix ?' : 'craft ' + f(craft)) + '</label>';
     }).join('') + '</div>';
-    out += '<h4>Carburants (kamas pour 1 000 points)</h4>' + table(['Jauge'].concat(E.FAMILIES), E.JAUGES.map(function (j) {
+    out += '<h4>Ingrédients des Makinas (0 = tu le droppes)</h4><div class="pgrid">' + Object.keys(S.ingPrices || {}).map(function (k) {
+      return '<label class="field">' + esc(k) + numInput('ingPrices.' + k, S.ingPrices[k]) + '</label>';
+    }).join('') + Object.keys(S.makina10 || {}).map(function (sp) {
+      return '<label class="field">Ressource Makina gén. 10 ' + esc(sp) + numInput('makina10.' + sp, S.makina10[sp]) + '</label>';
+    }).join('') + '</div>';
+    out += '<h4>Carburants (kamas pour 1 000 points ; 0 = tu les fabriques, chaque enclos a les siens)</h4>' + table(['Jauge'].concat(E.FAMILIES), E.JAUGES.map(function (j) {
       return [esc(j)].concat(E.FAMILIES.map(function (fm, i) { return numInput('fuel.' + j + '.' + i, S.fuel[j][i]); }));
     }));
     out += '<h4>Runes</h4><div class="pgrid">' + Object.keys(S.runePrices).map(function (k) {
@@ -184,8 +206,8 @@
       card('Durée estimée', days(pl.days), 'au mieux ' + days(pl.bestDays) + ' si tout réussit du premier coup') +
       card('Captures gén. 1', f(Math.ceil(pl.capWithMargin)), S.capMargin ? 'dont ' + Math.round(S.capMargin * 100) + ' % de marge (sexes)' : 'capture sûre à 100 %, sans marge') +
       card('Optimakinas', f(Math.ceil(optiN)), Object.keys(pl.optiCount).length ? 'gén. ' + Object.keys(pl.optiCount).join(', ') : 'aucune') +
-      card('Budget', f(pl.kamas) + ' kamas', 'carburant, XP, Makinas, filets') +
-      card('Génétons gagnés', f(pl.genetons), 'en chemin et à la gén. 10 (~' + f(pl.genetons * (S.genetonValue || 0)) + ' kamas)') + '</div>';
+      card('Budget', f(pl.kamas) + ' kamas', 'dont carburants ' + f(pl.fuelK + pl.levK) + ' (' + f((pl.fuelK + pl.levK) / Math.max(1, +S.enclos || 1)) + ' par enclos) · Makinas, filets') +
+      card('Génétons gagnés', f(pl.genetons), 'en chemin et à la gén. 10 (~' + f(pl.genetons * E.genetonValue(S)) + ' kamas)') + '</div>';
     if (pl.n90) out += '<div class="box">Sûreté 90 % : <b>' + pl.n90 + ' essais</b> prévus pour la dernière étape.</div>';
     if (pl.missing.length) out += '<div class="box warn">⚠ Prix manquants (comptés 0 ou option écartée) : ' + pl.missing.map(esc).join(' · ') + '. Remplis-les dans « Prix et réglages ».</div>';
     var limit = pl.capDays > pl.bestDays + pl.seqH / 24 ? 'Ce qui te limite : <b>le nombre de places d’enclos</b> (' + pl.places + ' places). Un enclos de plus raccourcit le plan.' :
@@ -213,11 +235,7 @@
       (optRows.length ? table(['Makina', 'En moyenne', 'À prévoir', 'Ton prix (vide = craft)'], optRows) : '<div class="box">Aucune Optimakina dans cette stratégie.</div>') + '</div></div>';
     var mid = pl.nodes.filter(function (n) { return n.name !== S.target; }).map(function (n) { return [esc(n.name), n.gen, f(n.need, 2), f(Math.max(1, Math.ceil(n.need)))]; });
     out += '<details><summary class="mini">Les montures intermédiaires à réussir (' + mid.length + ' couleurs)</summary>' + table(['Couleur', 'Gén.', 'En moyenne', 'Au moins'], mid) + '</details>';
-    out += '<div class="box"><b>Carburant :</b> ' + f(pl.fuelK) + ' kamas de fécondité · ' + f(pl.levK) + ' kamas d’XP · <b>Makinas :</b> ' + f(pl.optiK) + ' kamas · <b>Filets :</b> ' + f(pl.filetK) + ' kamas. ' +
-      '<span class="note">XP au carburant « ' + esc(S.xpFam) + ' », fécondité au « ' + esc(S.fertFam) + ' », ' + S.connexions + ' connexions par jour. ' +
-      'Chaque tranche de jauge prend le carburant le moins cher capable de l’atteindre (seuils 80 000 / 140 000 / 180 000 / 200 000).</span>' +
-      (function () { var d = E.depositTotal(R.s); return d === null ? '' : '<br><b>Mise de départ :</b> ' + f(d) + ' kamas, une seule fois (le socle de chaque jauge sous le seuil de ton carburant, rempli au moins cher : Extraits jusqu’à 80 000…). ' +
-        '<span class="note">Il reste dans les jauges : ce n’est pas une dépense, mais il faut l’avoir.</span>'; })() + '</div>';
+    out += fuelBox(R, pl);
 
     out += h('h3', null, 'Comparer les stratégies');
     out += '<p class="lead">Même cible, mêmes prix. « Tout au niveau 200 » répond à ta question : attendre le niveau 200 coûte peu de kamas mais beaucoup de jours.</p>';
@@ -380,7 +398,7 @@
       out += '<div class="box verdict">Aller le plus vite te fait gagner <b>' + days(dd) + '</b> pour <b>' + f(dk) + ' kamas</b> de plus, soit <b>' + f(dd > 0 ? dk / dd : null) + ' kamas par jour gagné</b>. ' +
         'Si une journée d’élevage te rapporte plus que ça, la vitesse vaut le coup.</div>';
     }
-    out += '<div class="box">La valeur d’un généton (' + f(S.genetonValue) + ' kamas) et le neurone (' + f(S.neurone) + ' kamas) se changent dans « Prix et réglages ». ' +
+    out += '<div class="box">La valeur d’un généton (' + f(E.genetonValue(S)) + ' kamas' + (S.genetonValue == null ? ', calculée depuis les parchemins' : ', saisie à la main') + ') et le neurone (' + f(S.neurone) + ' kamas) se changent dans « Prix et réglages ». ' +
       'Les bébés ratés en chemin (gén. 2 à 9) ne sont pas comptés : ils rapportent en plus, à l’extraction.</div>';
     var rows = P.rows.slice().sort(function (a, b) { return (a.missing ? 1 : 0) - (b.missing ? 1 : 0) || (b.perDay || 0) - (a.perDay || 0); }).map(function (r) {
       var lab = '<b>' + esc(r.xpFam) + '</b> / ' + esc(r.fertFam);
@@ -405,6 +423,63 @@
     return out;
   }
 
+  // ------------------------------------------------------------ carburants : ce qu'ils coûtent sur ton élevage, par enclos
+  /* Chaque enclos a ses propres jauges : ses carburants se posent dans CET enclos et nourrissent ses montures ; la mise de départ
+     se pose dans chaque enclos. Le coût affiché vient de tes prix (0 par défaut) ; le repère au prix HDV refait le même plan avec fuelRef. */
+  function fuelCosts(R, pl) {
+    var nE = Math.max(1, +S.enclos || 1), tot = pl.fuelK + pl.levK, dep = E.depositTotal(R.s);
+    var sr = clone(R.s); sr.fuel = clone(S.fuelRef || DD_DEFAULTS.fuelRef); sr.topNeed = pl.need[S.target];
+    var pr = E.plan(S.target, R.main.policy, sr);
+    return { nE: nE, tot: tot, perEnclos: tot / nE, dep: dep, depPerEnclos: dep === null ? null : dep / nE,
+             refTot: pr.fuelK + pr.levK, refDep: E.depositTotal(sr) };
+  }
+  function fuelBox(R, pl) {
+    var c = fuelCosts(R, pl);
+    var out = '<div class="box" id="carburants"><b>Carburants : ' + f(c.tot) + ' kamas</b> (fécondité ' + f(pl.fuelK) + ' · XP ' + f(pl.levK) + '), soit <b>' + f(c.perEnclos) + ' par enclos</b> sur tes ' + c.nE + ' enclos.';
+    if (c.dep !== null) out += ' Mise de départ : <b>' + f(c.dep) + '</b> (' + f(c.depPerEnclos) + ' par enclos, une seule fois).';
+    if (c.tot === 0 && !c.dep) out += '<br><span class="note">Tes prix de carburant sont à 0 (tu les fabriques). Mets un prix dans « Mes prix » : le coût sur ton élevage s’affiche ici. Mets-le pour chaque famille : un carburant laissé à 0 compte gratuit et remplit aussi les tranches basses (un Philtre à 0 remplace un Extrait payant).</span>';
+    out += '<br>Au prix HDV relevé (repère du classeur), ces mêmes carburants vaudraient <b>' + f(c.refTot) + ' kamas</b>' +
+      (c.refDep !== null ? ' + ' + f(c.refDep) + ' de mise de départ' : '') + ' : c’est ce que tu gagnes en les fabriquant toi-même.';
+    out += '<br><b>Makinas :</b> ' + f(pl.optiK) + ' kamas · <b>Filets :</b> ' + f(pl.filetK) + ' kamas.';
+    out += '<br><span class="note"><b>Chaque enclos a ses propres jauges</b> : ses carburants se posent dans cet enclos et nourrissent ses ' + S.perEnclos + ' montures, ' +
+      'et la mise de départ (le socle sous le seuil de ton carburant) se pose dans chaque enclos ; elle reste dans les jauges. ' +
+      'XP au carburant « ' + esc(S.xpFam) + ' », fécondité au « ' + esc(S.fertFam) + ' », ' + S.connexions + ' connexions par jour. ' +
+      'Chaque tranche de jauge prend le carburant le moins cher capable de l’atteindre (seuils 80 000 / 140 000 / 180 000 / 200 000).</span></div>';
+    return out;
+  }
+  // ------------------------------------------------------------ Makina gén. 10 par espèce
+  /* Même fonctionnement que la dragodinde (indication de l'utilisateur) : 1 ressource propre à l'espèce + 10 Pépites + des ressources droppées.
+     Le chemin vers la gén. 10 de la page ne couvre que les dragodindes : ce tableau donne le coût de la Makina gén. 10 des trois espèces. */
+  function makina10Section() {
+    var pep = 10 * (+((S.ingPrices || {})['Pépite']) || 0), dd = E.optiCraft(10, S);
+    var ex = S.extract || {};
+    var rows = [['Dragodinde', 'Queue de Glourséleste', f(S.glourPrice), f(pep), dd == null ? '<span class="warnc">prix ?</span>' : '<b>' + f(dd) + '</b>', 'Neurone ' + f(S.neurone)]];
+    Object.keys(S.makina10 || {}).forEach(function (sp) {
+      var r = S.makina10[sp]; rows.push([esc(sp), 'ressource gén. 10 ' + esc(sp), r == null ? '?' : f(r), f(pep), r == null ? '<span class="warnc">prix ?</span>' : '<b>' + f(+r + pep) + '</b>',
+        (sp === 'Muldo' ? 'Ambre ' : 'Corne ') + (ex[sp] == null ? '?' : f(ex[sp]))]);
+    });
+    return h('h3', null, 'Makina gén. 10 et extraction, par espèce') + table(['Espèce', 'Ressource propre', 'Son prix', '10 Pépites', 'Makina gén. 10', 'Extraction (prix unitaire)'], rows) +
+      '<p class="note">Muldo et Volkorne : même recette que la dragodinde d’après toi (ressource propre + 10 Pépites + drops à 0). ' +
+      'Les Queues de dragodinde sauvage de la dragodinde sont comptées à ' + f(S.queuePrice) + '. Le chemin vers la gén. 10 de cette page ne traite que les dragodindes.</p>';
+  }
+  // ------------------------------------------------------------ parchemins : que vaut un généton ?
+  function scrollSection() {
+    var vals = E.scrollValues(S), best = vals[0], by = {};
+    vals.forEach(function (v) { by[v.stat + '|' + v.size] = v; });
+    var out = h('h3', null, 'Parchemins : que vaut un généton ?');
+    out += table(['Caractéristique'].concat(E.SCROLLS.map(function (x) { return x[0] + ' (' + x[1] + ' gén.)'; })), E.SCROLL_STATS.map(function (st) {
+      return [esc(st)].concat(E.SCROLLS.map(function (x, i) {
+        var v = by[st + '|' + i]; if (!v) return '<span class="warnc">prix ?</span>';
+        var t = f(v.perGeneton) + ' <span class="mini">(' + f(v.price) + ')</span>';
+        return v === best ? '<b class="gold">' + t + '</b>' : t;
+      }));
+    }));
+    out += '<p class="note">Kamas par généton = prix HDV × (1 − taxe) ÷ coût en génétons ; entre parenthèses le prix du parchemin. ' +
+      (best ? 'Le meilleur échange : <b>' + esc(best.name) + '</b>, soit <b>' + f(best.perGeneton) + ' kamas</b> par généton. ' : '') +
+      'Prix par défaut : moyennes HDV Ombre de tes captures du 12/11/2026 ; ils se changent dans « Mes prix ». ' +
+      'Prix moyens : si tu vends beaucoup du même parchemin, le prix baisse ; répartis tes échanges sur les 2 ou 3 meilleurs.</p>';
+    return out;
+  }
   // ------------------------------------------------------------ 5. prix et réglages
   function tabPrix() {
     var s = compute().s;
@@ -413,6 +488,8 @@
     out += h('h3', null, 'Carburants : kamas pour 1 000 points (recette la moins chère)');
     var rows = E.JAUGES.map(function (j) { return [esc(j)].concat(E.FAMILIES.map(function (fm, i) { return '<input type="number" step="any" data-k="fuel.' + j + '.' + i + '" data-num="1" value="' + (S.fuel[j][i] == null ? '' : S.fuel[j][i]) + '" placeholder="?">'; })); });
     out += table(['Jauge'].concat(E.FAMILIES), rows);
+    out += '<p class="note">0 par défaut : tu fabriques tes carburants. Mets ton prix (achat HDV ou valeur de tes ressources) et le coût sur ton élevage s’affiche dans l’onglet du chemin, par enclos.</p>';
+    out += '<details><summary class="mini">Repère : prix HDV relevés dans le classeur (kamas pour 1 000 points)</summary>' + table(['Jauge'].concat(E.FAMILIES), E.JAUGES.map(function (j) { return [esc(j)].concat(E.FAMILIES.map(function (fm, i) { var v = (S.fuelRef || DD_DEFAULTS.fuelRef)[j][i]; return v == null ? '—' : f(v, 1); })); })) + '</details>';
     out += h('h3', null, 'Ce que coûte ton carburant, avec tes connexions');
     var fr = E.FAMILIES.map(function (fm) {
       var t = clone(s); t.xpFam = fm; t.fertFam = fm;
@@ -424,18 +501,23 @@
     out += '<p class="note">Kamas par monture : une jauge nourrit les ' + S.perEnclos + ' montures de l’enclos. Entre deux connexions la jauge redescend de palier : l’XP moyenne tient compte de ce ralentissement (Élixir à 40 XP / 10 s seulement au-dessus de 180 000).</p>';
     out += h('h3', null, 'Optimakinas de Dragodinde');
     var orow = Object.keys(E.OPTI).map(function (g) {
-      var o = E.OPTI[g], c = E.optiCost(+g, s);
-      return ['gén. ' + g, o.lvl, f(o.base), o.queues + (o.glour ? ' + 1 Queue de Glourséleste' : ''),
+      var o = E.OPTI[g], c = E.optiCost(+g, s), cr = E.optiCraft(+g, s);
+      var rec = Object.keys(o.ing).map(function (k) { return o.ing[k] + ' ' + esc(k); }).concat(o.glour ? ['1 Queue de Glourséleste'] : []).join(', ');
+      return ['gén. ' + g, o.lvl, '<span class="mini">' + rec + '</span>', cr == null ? '<span class="warnc">prix ?</span>' : f(cr), o.queues,
               '<input type="number" step="any" data-k="optiBuy.' + g + '" data-num="1" value="' + (S.optiBuy[g] == null ? '' : S.optiBuy[g]) + '" placeholder="achat HDV">', c == null ? '<span class="warnc">prix manquant</span>' : '<b>' + f(c) + '</b>'];
     });
-    out += table(['Optimakina', 'Niv. de craft', 'Craft hors Queues', 'Queues de dragodinde sauvage', 'Ton prix d’achat', 'Coût retenu'], orow);
+    out += table(['Optimakina', 'Niv. de craft', 'Recette (hors Queues)', 'Craft à tes prix', 'Queues de dragodinde sauvage', 'Ton prix d’achat', 'Coût retenu'], orow);
+    out += '<p class="note">Craft à tes prix = ingrédients de « Mes prix » (Pépite ' + f((S.ingPrices || {})['Pépite']) + ', le reste à 0 si tu le droppes) + Queues + Queue de Glourséleste. Les ressources de boss et les Pics se changent dans « Mes prix ».</p>';
+    out += makina10Section();
     out += '<div class="form">' +
       field('Queue de dragodinde sauvage (kamas)', 'queuePrice', 'number', { min: 0, note: '0 = tu la farmes pendant tes captures (drop ×3 sur Ombre)' }) +
-      field('Queue de Glourséleste (kamas)', 'glourPrice', 'number', { min: 0, ph: 'à relever', note: 'Optimakina gén. 10 uniquement' }) +
+      field('Queue de Glourséleste (kamas)', 'glourPrice', 'number', { min: 0, ph: 'à relever', note: 'Optimakina gén. 10 de dragodinde ; ton prix : 30 000' }) +
       field('Filet universel (kamas)', 'filet', 'number', { min: 0, note: '10 Bois de Frêne + 10 Fer' }) +
       field('Neurone de dragodinde (kamas)', 'neurone', 'number', { min: 0 }) +
-      field('Valeur d’un généton (kamas)', 'genetonValue', 'number', { min: 0, note: 'parchemin le plus rentable / son coût en génétons' }) +
+      '<label class="field">Valeur d’un généton (kamas)' + numInput('genetonValue', S.genetonValue, 'auto : ' + f(E.genetonValue(Object.assign({}, S, { genetonValue: null })))) +
+        '<span class="note">vide = le parchemin le plus rentable (tableau ci-dessous) ; un chiffre saisi l’emporte</span></label>' +
       field('Taxe HDV', 'tax', 'number', { min: 0, max: 1, step: 0.01 }) + '</div>';
+    out += scrollSection();
     out += h('h3', null, 'Règles du calcul');
     out += '<div class="form">' +
       field('Bonus Optimakina (%)', 'optiBonus', 'number', { min: 0, max: 100, note: '20 depuis la 3.7 (dofuspourlesnoobs), 10 avant' }) +
@@ -626,6 +708,6 @@
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'objectif'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (runes simples + fusion, prix des runes Ombre)';
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (parchemins, carburants à 0, Makinas et neurone à tes prix)';
   render();
 })();

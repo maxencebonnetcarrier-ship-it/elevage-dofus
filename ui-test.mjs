@@ -46,11 +46,15 @@ try {
   await setSel('objective', 'jours'); await sleep(1200);
   const d2 = dur(await card()); await setSel('enclos', 4); await sleep(1500); const d4 = dur(await card());
   check('4 enclos au lieu de 2 : pas plus long', d4 <= d2, [d2, d4]);
-  // 3. prix de la Queue de Glourséleste : l'Optimakina gén. 10 devient possible
+  // 3. prix de la Queue de Glourséleste : l'Optimakina gén. 10 suit (10 Pépites à 5 000 + Queue)
   await ev(`location.hash = '#prix'`); await sleep(1200);
   await ev(`(() => { const e = document.querySelector('[data-k="glourPrice"]'); e.value = '20000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1500);
   const opt10 = await ev(`[...document.querySelectorAll('tr')].map(t => t.textContent).find(t => t.startsWith('gén. 10'))`);
-  check('Optimakina gén. 10 chiffrée après saisie du prix', /30\s?284/.test(opt10.replace(/\u202f/g, ' ')), opt10);
+  const nsp = t => t.replace(/[\s\u00a0\u202f]/g, '');
+  check('Queue de Glourséleste à 20 000 : Optimakina gén. 10 = 50 000 + 20 000', nsp(opt10).includes('70000'), opt10);
+  const mk = await ev(`[...document.querySelectorAll('main tr')].map(t => t.textContent).filter(t => t.startsWith('Muldoressource') || t.startsWith('Volkorneressource')).join(' | ')`);
+  check('Makina gén. 10 : Muldo 74 000 + 50 000, Volkorne 18 000 + 50 000', nsp(mk).includes('124000') && nsp(mk).includes('68000'), mk);
+  check('extraction : Ambre 153 000 (Muldo), Corne 57 000 (Volkorne)', nsp(mk).includes('Ambre153000') && nsp(mk).includes('Corne57000'), mk);
   // 4. les réglages survivent à un rechargement (stockage local)
   await send('Page.reload'); await sleep(2500);
   const kept = await ev(`document.querySelector('[data-k="glourPrice"]').value + '|' + document.querySelector('[data-k="enclos"]').value`);
@@ -106,6 +110,31 @@ try {
   await ev(`location.hash = '#brisage'`); await sleep(1500);
   const mig = await ev(`['Rune Vi', 'Rune Ra Vi', 'Rune Pui', 'Rune Ine'].map(k => document.querySelector('#mes-prix [data-k="runePrices.' + k + '"]').value).join(',') + '|' + document.querySelector('[data-k="enclos"]').value`);
   check('version 3 → 4 : prix vidéo à la place des anciens défauts, saisie 999 et 3 enclos gardés', mig === '95,1044,999,51|3', mig);
+  // 9. parchemins : valeur du généton calculée, ancien 100 par défaut retiré, prix modifiable depuis « Mes prix »
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 4, genetonValue: 100, neurone: 23000 }))`);
+  await send('Page.reload'); await sleep(2500);
+  await ev(`location.hash = '#prix'`); await sleep(1500);
+  const gv = await ev(`(() => { const e = document.querySelector('#mes-prix [data-k="genetonValue"]'); return e.value + '|' + e.placeholder + '|' + [...document.querySelectorAll('main b.gold')].map(b => b.textContent).join(','); })()`);
+  check('version 4 → 5 : généton auto (991, Petit Parchemin d’Intelligence en tête)', gv.startsWith('|auto : 991|') && gv.includes('991'), gv);
+  const nr = await ev(`document.querySelector('#mes-prix [data-k="neurone"]').value`);
+  check('version 4 → 5 : neurone à l’ancien défaut 23 000 → 35 000', nr === '35000', nr);
+  await ev(`(() => { const e = document.querySelector('#mes-prix [data-k="scrollPrices.Sagesse.3"]'); e.value = '300000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1500);
+  const gv2 = await ev(`document.querySelector('#mes-prix [data-k="genetonValue"]').placeholder + '|' + document.querySelector('main').textContent.includes('Puissant Parchemin de Sagesse, soit')`);
+  check('Puissant Parchemin de Sagesse à 300 000 : le généton passe à 1 747', gv2.replace(/[\s  ]/g, '') === 'auto:1747|true', gv2);
+  // 10. carburants : 0 par défaut, coût affiché dès qu'un prix est saisi, par enclos ; anciens prix relevés remis à 0 à la mise à niveau
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 4, fuel: { 'Expérience': [12.5, 999, 347.0, null] } }))`);
+  await send('Page.reload'); await sleep(2500);
+  const fx = await ev(`[0, 1, 2].map(i => document.querySelector('#mes-prix [data-k="fuel.Expérience.' + i + '"]').value).join(',')`);
+  check('version 4 → 5 : carburant à l’ancien prix relevé → 0, prix saisi (999) gardé', fx === '0,999,0', fx);
+  await ev(`localStorage.removeItem('dd-elevage-v1')`); await send('Page.reload'); await sleep(2500);
+  await ev(`location.hash = '#objectif'`); await sleep(1500);
+  const fb0 = await ev(`(document.getElementById('carburants') || {}).textContent || ''`);
+  const norm = t => t.replace(/[\s  ]/g, '');
+  check('carburants à 0 : coût 0 sur l’élevage, repère HDV affiché', norm(fb0).startsWith('Carburants:0kamas') && /vaudraient[\d]+kamas/.test(norm(fb0)) && !norm(fb0).includes('vaudraient0kamas'), fb0.slice(0, 160));
+  for (const [i, v] of [[0, '12.5'], [1, '363'], [2, '347']]) { await ev(`(() => { const e = document.querySelector('#mes-prix [data-k="fuel.Expérience.${i}"]'); e.value = '${v}'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1200); }
+  const fb1 = await ev(`(document.getElementById('carburants') || {}).textContent || ''`);
+  const m1 = norm(fb1).match(/^Carburants:(\d+)kamas.*soit(\d+)parenclos/);
+  check('prix des carburants d’XP saisis : le coût s’affiche, partagé par enclos', m1 && +m1[1] > 0 && Math.abs(+m1[2] * 2 - +m1[1]) <= 2, fb1.slice(0, 160));
   check('aucune erreur JavaScript', errors.length === 0, errors);
 } catch (e) { console.log('KO  exception : ' + e.message); ok = false; }
 finally { try { ws && ws.close(); } catch { } ch.kill(); }
