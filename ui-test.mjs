@@ -61,11 +61,18 @@ try {
   const h3 = await ev(`[...document.querySelectorAll('h3')].map(h => h.textContent).join(' | ')`);
   check('clic sur Prune et Émeraude : issues affichées', h3.includes('Prune × Émeraude'), h3);
   // 6. tous les onglets sans erreur
-  for (const t of ['objectif', 'chemin', 'niveau', 'final', 'prix', 'brisage', 'regles']) {
+  for (const t of ['objectif', 'chemin', 'niveau', 'renta', 'final', 'prix', 'brisage', 'regles']) {
     await ev(`location.hash = '#${t}'`); await sleep(900);
     const bad = await ev(`document.querySelector('main').textContent.includes('Erreur de calcul') || document.querySelector('main').textContent.length < 300`);
     check('onglet ' + t + ' affiché', !bad);
   }
+  // 6 bis. rentabilité : clic sur une ligne = nouveau réglage de carburant
+  await ev(`location.hash = '#renta'`); await sleep(4000);
+  const nrows = await ev(`document.querySelectorAll('[data-fuel]').length`);
+  check('rentabilité : combinaisons de carburants chiffrées', nrows >= 9, nrows);
+  await ev(`document.querySelector('[data-fuel="Potion|Extrait"]').click()`); await sleep(3500);
+  const fam = await ev(`document.querySelector('[data-k="xpFam"]').value + '|' + document.querySelector('[data-k="fertFam"]').value`);
+  check('clic sur Potion / Extrait : réglage adopté', fam === 'Potion|Extrait', fam);
   // 7. remise à zéro
   await ev(`window.confirm = () => true; document.querySelector('[data-tab="prix"]').click()`); await sleep(1000);
   await ev(`document.querySelector('[data-reset]').click()`); await sleep(1500);

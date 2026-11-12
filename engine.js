@@ -330,6 +330,39 @@
              genPer9: used9 > 0 ? gen / used9 : Infinity, items: o.items };
   }
 
+  // ---------------------------------------------------------------- rentabilité dans le temps (carburants × durée)
+  /* Valeur du résultat : le bébé gén. 10 extrait (10 neurones, net de taxe) + tous les génétons gagnés en chemin et au dernier croisement.
+     Pour chaque couple (carburant de l'XP, carburant de fécondité), on cherche la meilleure stratégie et on compare durée, kamas et bénéfice par jour. */
+  function resultValue(pl, s) {
+    var neur = (num(s.neurone) || 0) * TREE[pl.target].gen * (1 - (num(s.tax) || 0));
+    var gen = pl.genetons * (num(s.genetonValue) || 0);
+    return { neurones: neur, genetons: gen, total: neur + gen };
+  }
+  function profitability(target, s, obj) {
+    var rows = [];
+    FAMILIES.forEach(function (xf) {
+      FAMILIES.forEach(function (ff) {
+        var t = JSON.parse(JSON.stringify(s)); t.xpFam = xf; t.fertFam = ff;
+        var lc = refillCostPer1000(xf, t.refillH, t.fuel['Expérience']), fc = fertCost(t);
+        if (lc === null || fc === null) { rows.push({ xpFam: xf, fertFam: ff, missing: true }); return; }
+        var r = optimize(target, t, obj), pl = r.plan, v = resultValue(pl, t);
+        rows.push({ xpFam: xf, fertFam: ff, policy: r.policy, plan: pl, days: pl.days, kamas: pl.kamas, fuel: pl.fuelK + pl.levK,
+                    value: v.total, valueNeur: v.neurones, valueGen: v.genetons, profit: v.total - pl.kamas,
+                    perDay: (v.total - pl.kamas) / Math.max(pl.days, 1e-9) });
+      });
+    });
+    var ok = rows.filter(function (r) { return !r.missing; });
+    var cheapest = ok.reduce(function (m, r) { return !m || r.kamas < m.kamas ? r : m; }, null);
+    ok.forEach(function (r) {
+      var dd = cheapest.days - r.days;
+      r.dayGain = dd;
+      r.costPerDay = dd > 1e-6 ? (r.kamas - cheapest.kamas) / dd : null;
+    });
+    return { rows: rows, cheapest: cheapest,
+             fastest: ok.reduce(function (m, r) { return !m || r.days < m.days - 1e-9 || (Math.abs(r.days - m.days) <= 1e-9 && r.kamas < m.kamas) ? r : m; }, null),
+             bestPerDay: ok.reduce(function (m, r) { return !m || r.perDay > m.perDay ? r : m; }, null) };
+  }
+
   // ---------------------------------------------------------------- brisage Muldo / Volkorne (formule de la vidéo)
   function brisage(L, b) {
     var runes = (3 * (L / 100) * b.weight * b.itemLevel / 200 + 1) / b.divisor;
@@ -344,6 +377,6 @@
               OPTI: OPTI, LEVELS: LEVELS, recipe: recipe, pTarget: pTarget, outcomes: outcomes, recovery: recovery, drain: drain,
               xpPerHour: xpPerHour, refillCostPer1000: refillCostPer1000, xpBetween: xpBetween, levelHours: levelHours, levelCost: levelCost,
               fertHours: fertHours, fertCost: fertCost, prepHours: prepHours, optiCost: optiCost, plan: plan, unitCosts: unitCosts,
-              optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage };
+              optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);

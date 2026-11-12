@@ -34,6 +34,15 @@ var DD_DEFAULTS = {
     'Perte de sérénité': [7.8, 153.7, 404.5, 5175.3],
     'Expérience': [12.5, 363.0, 347.0, null]
   },
+  // recette la moins chère de chaque case (classeur, feuille « Synthèse carburants »)
+  fuelRecipe: {
+    "Endurance": ["Extrait d'Endurance","Philtre d'Endurance","Potion d'Endurance","Gigantesque Élixir d'Endurance"],
+    "Maturité": ["Grand Extrait de Maturité","Gigantesque Philtre de Maturité","Gigantesque Potion de Maturité","—"],
+    "Amour": ["Gigantesque Extrait d'Amour","Petit Philtre d'Amour","Petite Potion d'Amour","Minuscule Élixir d'Amour"],
+    "Gain de sérénité": ["Gigantesque Extrait de gain de Sérénité","Minuscule Philtre de gain de Sérénité","Gigantesque Potion de gain de Sérénité","Petit Élixir de gain de Sérénité"],
+    "Perte de sérénité": ["Grand Extrait de perte de Sérénité","Philtre de perte de Sérénité","Minuscule Potion de perte de Sérénité","Grand Élixir de perte de Sérénité"],
+    "Expérience": ["Grand Extrait d'Expérience de monture","Philtre d'Expérience de monture","Grande Potion d'Expérience de monture","—"]
+  },
   brisage: {
     rune: 'PM',
     weight: 90,

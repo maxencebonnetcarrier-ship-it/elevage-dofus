@@ -110,7 +110,7 @@
   }
 
   // ------------------------------------------------------------ onglets
-  var TABS = [['objectif', '🎯 Gén. 10 : ce qu’il te faut'], ['chemin', '🧬 Chemin étape par étape'], ['niveau', '📈 Niveau des parents'],
+  var TABS = [['objectif', '🎯 Gén. 10 : ce qu’il te faut'], ['chemin', '🧬 Chemin étape par étape'], ['niveau', '📈 Niveau des parents'], ['renta', '⏱️ Rentabilité dans le temps'],
               ['final', '🎲 Dernier croisement'], ['prix', '💰 Prix et réglages'], ['brisage', '⚒️ Brisage Muldo / Volkorne'], ['regles', '📖 Règles et sources']];
   function renderTabs() {
     if (!TABS.some(function (t) { return t[0] === TAB; })) TAB = 'objectif';
@@ -123,7 +123,7 @@
   function render() {
     renderGlobal(); renderTabs();
     var main = document.getElementById('main');
-    var fn = { objectif: tabObjectif, chemin: tabChemin, niveau: tabNiveau, final: tabFinal, prix: tabPrix, brisage: tabBrisage, regles: tabRegles }[TAB];
+    var fn = { objectif: tabObjectif, chemin: tabChemin, niveau: tabNiveau, renta: tabRenta, final: tabFinal, prix: tabPrix, brisage: tabBrisage, regles: tabRegles }[TAB];
     try { main.innerHTML = fn(); } catch (e) { main.innerHTML = '<div class="box warn">Erreur de calcul : ' + esc(e.message) + '</div>'; console.error(e); }
   }
 
@@ -151,7 +151,7 @@
       card('Captures gén. 1', f(Math.ceil(pl.capWithMargin)), 'dont ' + Math.round(S.capMargin * 100) + ' % de marge (sexes, hasard)') +
       card('Optimakinas', f(Math.ceil(optiN)), Object.keys(pl.optiCount).length ? 'gén. ' + Object.keys(pl.optiCount).join(', ') : 'aucune') +
       card('Budget', f(pl.kamas) + ' kamas', 'carburant, XP, Makinas, filets') +
-      card('Génétons en chemin', f(pl.genetons), 'en plus de la gén. 10 (~' + f(pl.genetons * (S.genetonValue || 0)) + ' kamas)') + '</div>';
+      card('Génétons gagnés', f(pl.genetons), 'en chemin et à la gén. 10 (~' + f(pl.genetons * (S.genetonValue || 0)) + ' kamas)') + '</div>';
     if (pl.n90) out += '<div class="box">Sûreté 90 % : <b>' + pl.n90 + ' essais</b> prévus pour la dernière étape.</div>';
     if (pl.missing.length) out += '<div class="box warn">⚠ Prix manquants (comptés 0 ou option écartée) : ' + pl.missing.map(esc).join(' · ') + '. Remplis-les dans « Prix et réglages ».</div>';
     var limit = pl.capDays > pl.bestDays + pl.seqH / 24 ? 'Ce qui te limite : <b>le nombre de places d’enclos</b> (' + pl.places + ' places). Un enclos de plus raccourcit le plan.' :
@@ -322,6 +322,51 @@
     return out;
   }
 
+  // ------------------------------------------------------------ rentabilité dans le temps
+  var RCACHE = { key: null };
+  function tabRenta() {
+    var R = compute(), s = R.s, k = JSON.stringify(S);
+    if (RCACHE.key !== k) RCACHE = { key: k, val: E.profitability(S.target, s, S.objective) };
+    var P = RCACHE.val, cur = P.rows.filter(function (r) { return r.xpFam === S.xpFam && r.fertFam === S.fertFam; })[0];
+    var out = h('h2', null, 'Rentabilité dans le temps : quel carburant pour ' + esc(S.target) + ' ?');
+    out += '<p class="lead">Chaque ligne refait tout le calcul (meilleur niveau et Optimakina à chaque génération) avec un autre carburant pour l’<b>XP</b> et pour la <b>fécondité</b>. ' +
+      'On compare ce que ça <b>coûte</b> (carburants, XP, Makinas, filets), ce que ça <b>rapporte</b> (le bébé gén. 10 extrait : 10 neurones, plus tous les génétons gagnés) et le <b>temps</b> qu’il faut.</p>';
+    var vb = cur && !cur.missing ? E.resultValue(cur.plan, s) : null;
+    out += '<div class="cards">' +
+      card('Valeur du résultat', vb ? f(vb.total) + ' kamas' : '—', vb ? f(vb.neurones) + ' en neurones + ' + f(vb.genetons) + ' en génétons' : 'prix manquant') +
+      card('Le plus rentable par jour', P.bestPerDay ? esc(P.bestPerDay.xpFam) + ' / ' + esc(P.bestPerDay.fertFam) : '—', P.bestPerDay ? f(P.bestPerDay.perDay) + ' kamas par jour' : '') +
+      card('Le plus rapide', P.fastest ? days(P.fastest.days) : '—', P.fastest ? esc(P.fastest.xpFam) + ' / ' + esc(P.fastest.fertFam) + ' · ' + f(P.fastest.kamas) + ' kamas' : '') +
+      card('Le moins cher', P.cheapest ? f(P.cheapest.kamas) + ' kamas' : '—', P.cheapest ? esc(P.cheapest.xpFam) + ' / ' + esc(P.cheapest.fertFam) + ' · ' + days(P.cheapest.days) : '') + '</div>';
+    if (P.fastest && P.cheapest && P.fastest !== P.cheapest) {
+      var dd = P.cheapest.days - P.fastest.days, dk = P.fastest.kamas - P.cheapest.kamas;
+      out += '<div class="box verdict">Aller le plus vite te fait gagner <b>' + days(dd) + '</b> pour <b>' + f(dk) + ' kamas</b> de plus, soit <b>' + f(dd > 0 ? dk / dd : null) + ' kamas par jour gagné</b>. ' +
+        'Si une journée d’élevage te rapporte plus que ça, la vitesse vaut le coup.</div>';
+    }
+    out += '<div class="box">La valeur d’un généton (' + f(S.genetonValue) + ' kamas) et le neurone (' + f(S.neurone) + ' kamas) se changent dans « Prix et réglages ». ' +
+      'Les bébés ratés en chemin (gén. 2 à 9) ne sont pas comptés : ils rapportent en plus, à l’extraction.</div>';
+    var rows = P.rows.slice().sort(function (a, b) { return (a.missing ? 1 : 0) - (b.missing ? 1 : 0) || (b.perDay || 0) - (a.perDay || 0); }).map(function (r) {
+      var lab = '<b>' + esc(r.xpFam) + '</b> / ' + esc(r.fertFam);
+      if (r.missing) return [lab, '—', '—', '—', '—', '—', '—', '—', '<span class="dim">prix de carburant manquant</span>'];
+      var mine = r.xpFam === S.xpFam && r.fertFam === S.fertFam;
+      var cls = r === P.bestPerDay ? 'best' : (mine ? 'sel' : '');
+      return { cls: cls, attr: ' data-fuel="' + esc(r.xpFam) + '|' + esc(r.fertFam) + '" style="cursor:pointer"', cells: [lab + (mine ? ' <span class="pill o">ton réglage</span>' : ''), days(r.days), f(r.fuel), f(r.plan.optiK), f(r.kamas), f(r.value),
+        '<b class="' + (r.profit >= 0 ? 'ok' : 'ko') + '">' + f(r.profit) + '</b>', '<b>' + f(r.perDay) + '</b>', r.costPerDay == null ? (r === P.cheapest ? 'référence' : '<span class="dim">pas plus rapide</span>') : f(r.costPerDay)] };
+    });
+    out += table(['Carburant XP / fécondité', 'Durée', 'Carburants (fécondité + XP)', 'Makinas', 'Coût total', 'Valeur obtenue', 'Bénéfice', 'Bénéfice par jour', 'Kamas par jour gagné'], rows);
+    out += '<p class="note">Clique une ligne pour l’adopter comme réglage (elle passe en haut de page). « Kamas par jour gagné » : ce que coûte chaque jour gagné par rapport à la solution la moins chère. ' +
+      'Avec ' + S.connexions + ' connexions par jour, un carburant rapide ne raccourcit la fécondité que si la jauge se vide avant ta connexion suivante : monte le nombre de connexions en haut de page pour voir la différence.</p>';
+    out += h('h3', null, 'Ce que coûte chaque carburant à crafter');
+    var fr = E.JAUGES.map(function (j) {
+      return [esc(j)].concat(E.FAMILIES.map(function (fm, i) {
+        var pr = S.fuel[j][i], rn = S.fuelRecipe && S.fuelRecipe[j] ? S.fuelRecipe[j][i] : '';
+        return pr == null ? '<span class="dim">prix manquant</span>' : '<b>' + f(pr, 1) + '</b>' + (rn && rn !== '—' ? '<br><span class="mini">' + esc(rn) + '</span>' : '');
+      }));
+    });
+    out += table(['Jauge (kamas pour 1 000 pts)'].concat(E.FAMILIES), fr);
+    out += '<p class="note">Recette la moins chère de chaque case, d’après les prix de ses ingrédients (classeur, relevés Ombre sinon Kourial). Tes prix se changent dans « Prix et réglages ».</p>';
+    return out;
+  }
+
   // ------------------------------------------------------------ 5. prix et réglages
   function tabPrix() {
     var s = compute().s;
@@ -461,11 +506,13 @@
   document.addEventListener('click', function (e) {
     var tb = e.target.closest('[data-tab]');
     if (tb) { TAB = tb.getAttribute('data-tab'); history.replaceState(null, '', '#' + TAB); render(); window.scrollTo(0, 0); return; }
+    var fu = e.target.closest('[data-fuel]');
+    if (fu) { var pp = fu.getAttribute('data-fuel').split('|'); S.xpFam = pp[0]; S.fertFam = pp[1]; save(); render(); return; }
     var fr = e.target.closest('[data-final]');
     if (fr) { S.finalX = fr.getAttribute('data-final'); save(); render(); return; }
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'objectif'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026';
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (rentabilité)';
   render();
 })();
