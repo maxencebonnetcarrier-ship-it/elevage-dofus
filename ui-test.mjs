@@ -30,14 +30,60 @@ try {
     if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text);
     if (d.method === 'Runtime.consoleAPICalled' && d.params.type === 'error') errors.push(d.params.args.map(a => a.value || a.description).join(' ')); });
   await send('Runtime.enable'); await send('Page.enable');
-  await send('Page.navigate', { url: URL0 + '#objectif' }); await sleep(2500);
+  await send('Page.navigate', { url: URL0 + '#plan' }); await sleep(4000);
+  const numP = s => +String(s).replace(/[^\d,]/g, '').replace(',', '.');
+  const selP = (k, v) => ev(`(() => { const e = document.querySelector('[data-k="${k}"]'); e.value = ${JSON.stringify(String(v))}; e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  // 00. vue simple : « Mon plan » ouvert, dragodinde au choix (toutes générations)
+  const pv = await ev(`[...document.querySelectorAll('#tabs [data-tab]')].map(b => b.dataset.tab).join(',') + '|' + !!document.querySelector('#global [data-k="xpFam"]') + '|' + document.querySelectorAll('[data-k="planTarget"] option').length`);
+  check('vue simple : 3 onglets, pas de réglage de carburant en haut, 63 dragodindes au choix', pv === 'plan,prix,brisage|false|63', pv);
+  const tblAfter = t => ev(`(() => { const h = [...document.querySelectorAll('main h3')].find(x => x.textContent.startsWith(${JSON.stringify(t)})); let n = h && h.nextElementSibling; while (n && !n.querySelector('table')) n = n.nextElementSibling; return n ? [...n.querySelectorAll('tbody tr')].map(r => [...r.children].map(c => c.textContent.trim()).join(' ¦ ')) : []; })()`);
+  const sols = await tblAfter('1.');
+  check('tableau 1 : la solution la plus rapide en tête, « ton plan », plus 7 stratégies à comparer', sols.length === 9 && sols[0].includes('Solution la plus rapide') && sols[0].includes('ton plan') && sols[2].includes('Capturer plus'), sols.slice(0, 3));
+  const ord = await tblAfter('2.');
+  const lastRow = ord[ord.length - 1] || '';
+  check('tableau 2 : 3 captures + 17 dragodindes, dans l’ordre, la dernière = Prune et Rousse (Prune × Rousse, niveau, chance)', ord.length === 20 && ord[0].includes('capture au filet') && lastRow.includes('Prune et Rousse') && lastRow.includes('Prune × ') && /niv\. \d+/.test(lastRow) && lastRow.includes('%'), [ord.length, lastRow]);
+  const t4 = (await tblAfter('4.')).length, t5 = (await tblAfter('5.')).length;
+  check('tableaux 4 et 5 : chance selon le niveau, coût de Makina par réussite', t4 >= 10 && t5 === 9, [t4, t5]);
+  await ev(`document.querySelector('tr[data-opti="0"]').click()`); await sleep(3000);
+  const sols0 = await tblAfter('1.'), ord0 = await tblAfter('2.');
+  check('clic sur « sans Makina » : adopté, plus aucune Makina dans le plan', sols0[1].includes('ton plan') && !ord0.some(r => r.includes('+ Makina')), sols0[1]);
+  // barre XP remplie en cliquant dessus, à 60 % de sa largeur → 120 000 points (T2)
+  const perDay = async () => numP((await tblAfter('3.')).find(r => r.startsWith('100')).split(' ¦ ')[3]);
+  const pd1 = await perDay();
+  await ev(`(() => { const g = document.querySelector('[data-fill="xpFam"]'), r = g.getBoundingClientRect(); g.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: r.left + r.width * 0.6, clientY: r.top + r.height / 2 })); })()`); await sleep(3000);
+  const gz = await ev(`document.querySelector('[data-fill="xpFam"]').getAttribute('aria-valuenow') + '|' + document.querySelector('[data-fill="xpFam"]').previousElementSibling.textContent`);
+  const pd2 = await perDay();
+  check('clic sur la barre XP à 60 % : 120 000 points, T2, plus de montures niveau 100 par jour', gz.startsWith('120000|') && gz.includes('T2') && pd2 > pd1, [gz, pd1, pd2]);
+  await ev(`document.querySelector('[data-tier="xpFam|Extrait"]').click()`); await sleep(3000);
+  const gz1 = await ev(`document.querySelector('[data-fill="xpFam"]').getAttribute('aria-valuenow')`);
+  check('bouton T1 du tableau des tiers : barre remise à 80 000', gz1 === '80000', gz1);
+  // autre dragodinde : Turquoise (gén. 7)
+  await selP('planTarget', 'Turquoise'); await sleep(3500);
+  const tq = await ev(`document.querySelector('main h2').textContent`), ordT = await tblAfter('2.');
+  check('dragodinde visée = Turquoise : plan recalculé jusqu’à la gén. 7', tq.includes('Turquoise') && tq.includes('gén. 7') && (ordT[ordT.length - 1] || '').includes('Turquoise'), [tq, ordT.length]);
+  // case « c'est fait » gardée après rechargement
+  await ev(`(() => { const c = document.querySelector('input.tk'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(2500);
+  await send('Page.reload'); await sleep(4000);
+  const pr = await ev(`document.querySelector('.prog').textContent + '|' + document.querySelector('input.tk').checked + '|' + document.querySelector('input.tk').closest('tr').className`);
+  check('ligne cochée : comptée, gardée après rechargement', /1 \/ \d+/.test(pr) && pr.endsWith('|true|done'), pr);
+  // brisage : la solution pour chaque dragodinde
+  await ev(`location.hash = '#brisage'`); await sleep(2500);
+  const bs = await ev(`(() => { const t = document.querySelector('main h2').nextElementSibling.querySelector('table'); const r = [...t.querySelectorAll('tbody tr')]; const cell = n => { const x = r.find(y => y.children[0].textContent.trim() === n); return x ? x.lastElementChild.textContent : ''; }; return r.length + '|' + cell('Rousse') + '|' + cell('Prune et Rousse'); })()`);
+  check('brisage : 66 dragodindes, Rousse à briser à un niveau, Prune et Rousse à extraire', bs.startsWith('66|Briser au niv.') && bs.endsWith('|Extraire les neurones'), bs);
+  await ev(`location.hash = '#plan'`); await sleep(1500);
+  await selP('planTarget', 'Prune et Rousse'); await sleep(3500);
+  await ev(`document.querySelector('tr[data-opti="1"]').click()`); await sleep(3500);
+  await ev(`document.querySelector('[data-expert="1"]').click()`); await sleep(800);
+  const nt = await ev(`document.querySelectorAll('#tabs [data-tab]').length + '|' + !!document.querySelector('#global [data-k="xpFam"]')`);
+  check('« Plus de détails » : les 10 onglets et les réglages des barres', nt === '10|true', nt);
+  await ev(`location.hash = '#objectif'`); await sleep(2500);
   const card = () => ev(`[...document.querySelectorAll('.card')].map(c => c.querySelector('.k').textContent + '=' + c.querySelector('.v').textContent)`);
   const before = await card();
   check('page chargée, 5 cartes', before.length === 5, before);
   const setSel = (k, v) => ev(`(() => { const e = document.querySelector('[data-k="${k}"]'); e.value = ${JSON.stringify(String(v))}; e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
   // 0. en-tête : 6 enclos au plus, aucun « carburant fécondité »
   const hdr = await ev(`document.querySelectorAll('[data-k="enclos"] option').length + '|' + document.getElementById('global').textContent`);
-  check('en-tête : 6 enclos au plus, carburant Amour · Endurance · Maturité (pas de « carburant fécondité »)', hdr.startsWith('6|') && hdr.includes('Carburant Amour · Endurance · Maturité') && !/carburant f[ée]condit[ée]/i.test(hdr), hdr.slice(0, 120));
+  check('en-tête : 6 enclos au plus, barres Amour · Endurance · Maturité en tiers (pas de « carburant fécondité »)', hdr.startsWith('6|') && hdr.includes('Barres Amour · Endurance · Maturité') && hdr.includes('T2 · jusqu’à 140 000') && !/carburant f[ée]condit[ée]/i.test(hdr), hdr.slice(0, 120));
   // 1. objectif « dépenser le moins » : la durée doit s'allonger et les Optimakinas disparaître
   await setSel('objective', 'kamas'); await sleep(1500);
   const cheap = await card();
@@ -156,6 +202,7 @@ try {
   const fx = await ev(`[0, 1, 2].map(i => document.querySelector('#mes-prix [data-k="fuel.Expérience.' + i + '"]').value).join(',')`);
   check('version 4 → 5 : carburant à l’ancien prix relevé → 0, prix saisi (999) gardé', fx === '0,999,0', fx);
   await ev(`localStorage.removeItem('dd-elevage-v1')`); await send('Page.reload'); await sleep(2500);
+  await ev(`document.querySelector('[data-expert="1"]').click()`); await sleep(600);
   await ev(`location.hash = '#objectif'`); await sleep(1500);
   const fb0 = await ev(`(document.getElementById('carburants') || {}).textContent || ''`);
   const norm = t => t.replace(/[\s  ]/g, '');

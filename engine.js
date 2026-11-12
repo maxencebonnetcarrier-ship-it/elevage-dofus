@@ -139,11 +139,20 @@
   }
   function famIdx(f) { var i = FAMILIES.indexOf(f); if (i < 0) throw new Error('famille inconnue ' + f); return i; }
   // XP moyenne par heure si tu remplis la Mangeoire jusqu'au plafond de la famille toutes les `refillH` heures
-  function xpPerHour(fam, refillH) { return drain(CAPS[famIdx(fam)], refillH * 60) / refillH; }
+  /* Remplissage de la barre à chaque connexion : le plafond du tier choisi, ou ton remplissage (fill, en points) s'il est donné
+     (barre remplie en cliquant dessus). Le tier qui compte est celui où se trouve ce remplissage. */
+  function fillOf(fam, fill) { var f = num(fill); return f !== null && f > 0 ? Math.min(f, CAPS[3]) : CAPS[famIdx(fam)]; }
+  function xpPerHour(fam, refillH, fill) { return drain(fillOf(fam, fill), refillH * 60) / refillH; }
+  // minutes pour délivrer `amount` points depuis une barre à `start` (Infinity si la barre n'en contient pas assez)
+  function minutesToDrain(start, amount) {
+    var lvl = start, t = 0, left = amount;
+    while (left > 1e-9 && lvl > 1e-9) { var k = tierOf(lvl), lower = k === 0 ? 0 : CAPS[k - 1], seg = Math.min(lvl - lower, left); t += seg / RATE[k]; lvl -= seg; left -= seg; }
+    return left > 1e-9 ? Infinity : t;
+  }
   function num(v) { return v === null || v === undefined || v === '' || !isFinite(+v) ? null : +v; }
   // coût (kamas / 1 000 pts) d'une recharge : chaque tranche se remplit avec la famille la moins chère autorisée à y monter
-  function refillCostPer1000(fam, refillH, row) {
-    var fi = famIdx(fam), cap = CAPS[fi], d = drain(cap, refillH * 60);
+  function refillCostPer1000(fam, refillH, row, fill) {
+    var cap = fillOf(fam, fill), fi = tierOf(cap), d = drain(cap, refillH * 60);
     if (d <= 0) return null;
     var lo = cap - d, cost = 0;
     for (var k = 0; k <= fi; k++) {
@@ -157,13 +166,19 @@
     return cost / d * 1000;
   }
   function xpBetween(from, to) { from = clamp(Math.round(from), 1, 200); to = clamp(Math.round(to), 1, 200); return Math.max(0, XP[to] - XP[from]); }
-  function levelHours(from, to, s) { return xpBetween(from, to) / xpPerHour(s.xpFam, s.refillH); }
+  function levelHours(from, to, s) { return xpBetween(from, to) / xpPerHour(s.xpFam, s.refillH, s.xpFill); }
   function levelCost(from, to, s) {   // kamas par monture (la jauge nourrit toutes les montures de l'enclos)
-    var c = refillCostPer1000(s.xpFam, s.refillH, s.fuel['Expérience']);
+    var c = refillCostPer1000(s.xpFam, s.refillH, s.fuel['Expérience'], s.xpFill);
     return c === null ? null : xpBetween(from, to) / 1000 * c / s.perEnclos;
   }
   // une fécondité = 2 phases de 20 000 pts (Endurance + Maturité, puis Amour) ; chaque phase attend la connexion suivante
-  function fertHours(s) { var phase = 20000 / RATE[famIdx(s.fertFam)] / 60; return 2 * Math.max(phase, s.refillH); }
+  // une phase : 20 000 points délivrés depuis le remplissage ; une barre trop basse demande plusieurs connexions
+  function fertPhaseH(s) {
+    var F = fillOf(s.fertFam, s.fertFill), m = minutesToDrain(F, 20000);
+    if (isFinite(m)) return m / 60;
+    return Math.ceil(20000 / Math.max(1, drain(F, s.refillH * 60))) * s.refillH;
+  }
+  function fertHours(s) { return 2 * Math.max(fertPhaseH(s), s.refillH); }
   /* Seuils : un carburant remplit la jauge jusqu'à son plafond (Extrait 80 000, Philtre 140 000, Potion 180 000, Élixir 200 000),
      et le débit dépend de la charge, pas du carburant. On combine donc : chaque tranche se remplit avec le carburant le moins cher
      capable de l'atteindre (une tranche basse peut prendre un Philtre ou une Potion s'ils reviennent moins cher). */
@@ -173,7 +188,7 @@
     return best;
   }
   function fertCost(s) {   // kamas par monture pour une fécondité (3 jauges à 20 000 + sérénité), points consommés dans la tranche de la famille choisie
-    var fi = famIdx(s.fertFam), tot = 0;
+    var fi = tierOf(fillOf(s.fertFam, s.fertFill)), tot = 0;
     var pts = { 'Endurance': 20000, 'Maturité': 20000, 'Amour': 20000, 'Gain de sérénité': s.seren / 2, 'Perte de sérénité': s.seren / 2 };
     for (var j in pts) { var pr = cheapestFrom(s.fuel[j], fi); if (pr === null) return null; tot += pts[j] / 1000 * pr; }
     return tot / s.perEnclos;
@@ -305,6 +320,8 @@
     }
     var critH = cp(target), places = placesOf(s);
     var days = Math.max(critH, placeH / places) / 24;
+    // calendrier de chaque étape (heures depuis le début, chemin critique) : elle démarre quand ses deux parents sont nés
+    nodes.forEach(function (n) { n.startH = Math.max(cp(n.A), cp(n.B)); n.doneH = cp(n.name); });
     nodes.sort(function (a, b) { return a.gen - b.gen || a.name.localeCompare(b.name); });
     return { target: target, nodes: nodes, need: need, credit: {}, captures: caps, capTot: capTot, capWithMargin: capTot * (1 + s.capMargin),
              kamas: kamas, fuelK: fuelK, levK: levK, optiK: optiK, filetK: filetK, placeH: placeH, critH: critH, seqH: 0, days: days,
@@ -634,7 +651,7 @@
 
   var API = { TREE: TREE, XP: XP, NAMES: NAMES, GEN1: GEN1, GENETONS: GENETONS, FAMILIES: FAMILIES, CAPS: CAPS, RATE: RATE, JAUGES: JAUGES,
               OPTI: OPTI, LEVELS: LEVELS, recipe: recipe, pTarget: pTarget, outcomes: outcomes, recovery: recovery, drain: drain,
-              xpPerHour: xpPerHour, refillCostPer1000: refillCostPer1000, xpBetween: xpBetween, levelHours: levelHours, levelCost: levelCost,
+              xpPerHour: xpPerHour, fillOf: fillOf, minutesToDrain: minutesToDrain, tierOf: tierOf, refillCostPer1000: refillCostPer1000, xpBetween: xpBetween, levelHours: levelHours, levelCost: levelCost,
               fertHours: fertHours, fertCost: fertCost, cheapestFrom: cheapestFrom, baseDeposit: baseDeposit, depositTotal: depositTotal, prepHours: prepHours, optiCost: optiCost, optiCraft: optiCraft, plan: plan, unitCosts: unitCosts,
               optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel, bestPerSimple: bestPerSimple,
               SCROLLS: SCROLLS, SCROLL_STATS: SCROLL_STATS, scrollName: scrollName, scrollValues: scrollValues, genetonValue: genetonValue,

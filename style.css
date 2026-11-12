@@ -77,3 +77,66 @@ details.prices[open] > summary { border-bottom: 1px solid var(--line); }
 .prices-in h4 { margin: 14px 0 6px; font-size: 13px; color: var(--gold2); }
 .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; }
 .pgrid .field input { width: 100%; }
+/* ---------- vue simple : « Mon plan » ---------- */
+.tabs button.more { margin-left: auto; color: var(--gold); border: 1px dashed #6b5422; border-radius: 8px; margin-bottom: 6px; padding: 6px 12px; }
+.dd { white-space: nowrap; font-weight: 600; }
+.dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgba(255,255,255,.45); vertical-align: -1px; margin-right: 2px; }
+.dd .dot:last-of-type { margin-right: 5px; }
+.choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin: 12px 0; }
+.choice button { display: flex; flex-direction: column; gap: 2px; text-align: left; background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; color: var(--text); font: inherit; cursor: pointer; }
+.choice button:hover { border-color: #6b5422; }
+.choice button[aria-pressed=true] { border-color: var(--gold); background: #241f14; }
+.choice .t { font-size: 15px; font-weight: 700; }
+.choice .big { font-size: 24px; font-weight: 800; }
+.prog { display: flex; align-items: center; gap: 12px; margin: 8px 0 4px; font-size: 13px; color: var(--dim); }
+.pbar { flex: 1; height: 10px; border-radius: 5px; background: var(--panel2); border: 1px solid var(--line); overflow: hidden; }
+.pbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--ok)); }
+.barres h3 { margin-top: 0; }
+.grow { margin: 12px 0 4px; }
+.glab { font-weight: 700; margin-bottom: 5px; }
+.gauge { display: flex; height: 40px; border-radius: 9px; overflow: hidden; border: 1px solid var(--line); }
+.gauge .seg { display: flex; flex-direction: column; align-items: center; justify-content: center; border: none; border-right: 1px solid var(--bg); background: var(--panel2); color: var(--dim); font: inherit; font-weight: 800; cursor: pointer; line-height: 1.1; }
+.gauge .seg small { font-weight: 500; font-size: 11px; }
+.gauge .seg.on { background: #4a3c1b; color: var(--gold2); }
+.gauge .seg.cur { background: var(--gold); color: #1a1408; }
+.gauge .seg:disabled { cursor: not-allowed; opacity: .35; }
+.gauge .seg:not(:disabled):hover { outline: 2px solid var(--gold2); outline-offset: -2px; }
+.gverdict { margin-top: 5px; font-size: 13px; }
+.quest { list-style: none; padding: 0; margin: 14px 0; }
+.step { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 12px; padding: 12px 14px; margin: 0 0 12px; }
+.step.done { opacity: .5; border-left-color: var(--ok); }
+.step.done .stitle { text-decoration: line-through; }
+.shead { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.shead .num { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: #1a1408; font-weight: 800; flex: none; }
+.step.done .shead .num { background: var(--ok); }
+.stitle { font-size: 16px; }
+.shead .when { margin-left: auto; color: var(--dim); font-size: 12.5px; }
+.tick { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; font-size: 12.5px; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px; }
+.tick input { margin: 0; }
+.mons { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 10px; margin-top: 10px; }
+.mon { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.mon .big { font-size: 16px; font-weight: 700; }
+.mon ul, ul.tips { list-style: none; margin: 6px 0 0; padding: 0; }
+.mon li, ul.tips li { margin: 5px 0; }
+.chance { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 3px; max-width: 220px; }
+.chance i { display: block; height: 100%; background: var(--ok); }
+@media (max-width: 640px) { .shead .when { margin-left: 0; } .tabs button.more { margin-left: 0; } .choice .big { font-size: 20px; } }
+/* ---------- « Mon plan » en tableaux ---------- */
+.phead { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-end; justify-content: space-between; }
+.phead h2 { margin: 0; }
+.phead select { min-width: 220px; }
+tr.done td { opacity: .45; }
+tr.done td:nth-child(3) { text-decoration: line-through; }
+input.tk { width: 18px; height: 18px; accent-color: var(--ok); cursor: pointer; }
+.tierbtn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; font: inherit; cursor: pointer; }
+.tierbtn:hover { border-color: var(--gold); }
+.tierbtn.cur { background: var(--gold); color: #1a1408; border-color: var(--gold); font-weight: 700; }
+.gauge2 { position: relative; height: 38px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel2); overflow: hidden; cursor: pointer; user-select: none; }
+.gauge2:hover { border-color: var(--gold); }
+.gauge2 .gfill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #8a6a24, var(--gold)); pointer-events: none; }
+.gauge2 .gseg { position: absolute; top: 0; bottom: 0; display: grid; place-items: center; border-right: 1px dashed rgba(255,255,255,.28); font-weight: 800; font-size: 12px; color: rgba(255,255,255,.75); pointer-events: none; text-shadow: 0 1px 2px #000; }
+.gauge2 .gno { position: absolute; top: 0; bottom: 0; right: 0; background: repeating-linear-gradient(45deg, rgba(0,0,0,.45) 0 6px, transparent 6px 12px); pointer-events: none; }
+details.detail { margin: 14px 0; }
+details.detail > summary { cursor: pointer; color: var(--gold2); font-weight: 600; padding: 6px 0; }
+@media (max-width: 640px) { main td.l:first-child { min-width: 150px; } .phead select { min-width: 0; width: 100%; } .phead .field { width: 100%; } }
+@media (max-width: 640px) { main td.l:first-child:has(input.tk) { min-width: 0; } }

@@ -261,5 +261,23 @@ t('brisage DD : les 66 couleurs ont des bonus, gén. 1 sans neurone', () => {
   for (const X of E.NAMES) { assert.ok(Object.keys(E.BR.dd[X]).length >= 2, X); }
   const r = E.brisageDD('Rousse', 100, S); assert.strictEqual(r.extract, 0); assert.ok(r.gain > 0);
 });
+t('barre remplie au clic : un remplissage égal au plafond du tier donne le même résultat que le tier', () => {
+  for (const [fam, F] of [['Extrait', 80000], ['Philtre', 140000], ['Potion', 180000]]) {
+    assert.ok(Math.abs(E.xpPerHour(fam, 12) - E.xpPerHour('Extrait', 12, F)) < 1e-9, fam);
+    const a = E.fertHours({ fertFam: fam, refillH: 4 }), b = E.fertHours({ fertFam: 'Extrait', fertFill: F, refillH: 4 });
+    assert.ok(Math.abs(a - b) < 1e-9, fam + ' ' + a + ' ' + b);
+  }
+});
+t('barre remplie au clic : plus haut = plus d’XP, trop basse = plusieurs connexions pour la fécondité', () => {
+  assert.ok(E.xpPerHour('Extrait', 12, 120000) > E.xpPerHour('Extrait', 12, 80000));
+  assert.strictEqual(E.tierOf(E.fillOf('Extrait', 120000)), 1);   // 120 000 points = T2
+  // 10 000 points ne suffisent pas pour 20 000 : 2 connexions de 4 h par phase, 2 phases → 16 h
+  assert.strictEqual(E.fertHours({ fertFam: 'Extrait', fertFill: 10000, refillH: 4 }), 16);
+});
+t('plan : chaque étape a son calendrier (début après ses parents, fin avant la cible)', () => {
+  const pl = E.optimize('Prune et Rousse', S, 'jours', { allowOpti: false }).plan, top = pl.nodes.find(x => x.name === 'Prune et Rousse');
+  for (const x of pl.nodes) { assert.ok(x.startH >= 0 && x.doneH > x.startH, x.name); assert.ok(x.doneH <= top.doneH + 1e-9, x.name); }
+  assert.ok(Math.abs(top.doneH - pl.critH) < 1e-9);
+});
 console.log(`\n${n - fails}/${n} tests verts`);
 process.exit(fails ? 1 : 0);

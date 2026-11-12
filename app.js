@@ -3,8 +3,26 @@
   'use strict';
   var E = window.DD, KEY = 'dd-elevage-v1';
   var S = load();
-  var TAB = (location.hash || '#objectif').slice(1);
+  var TAB = (location.hash || '#plan').slice(1);
   var GEN10 = E.NAMES.filter(function (n) { return E.TREE[n].gen === 10; }).sort();
+  /* Tiers des barres : une barre monte à 200 000 points en 4 tiers ; plus elle est haute, plus elle se vide vite.
+     Chaque carburant ne remplit que jusqu'à son tier : Extrait T1 (80 000), Philtre T2 (140 000), Potion T3 (180 000), Élixir T4 (200 000).
+     En interne, le tier reste stocké sous le nom du carburant qui l'atteint (xpFam / fertFam). */
+  var TIER_FUEL = ['Extraits', 'Philtres', 'Potions', 'Élixirs'];
+  var TIER_CAP = ['80 000', '140 000', '180 000', '200 000'];
+  function tierIdx(fam) { return E.FAMILIES.indexOf(fam); }
+  function tierOf(fam) { var i = tierIdx(fam); return i < 0 ? esc(fam) : 'T' + (i + 1); }
+  function tierLong(fam) { var i = tierIdx(fam); return i < 0 ? esc(fam) : 'T' + (i + 1) + ' (barre jusqu’à ' + TIER_CAP[i] + ', ' + TIER_FUEL[i] + ')'; }
+  function tierHow(i) { return i === 0 ? 'Extraits jusqu’à 80 000' : 'Extraits jusqu’à 80 000, puis ' + TIER_FUEL.slice(1, i + 1).map(function (x, j) { return x + ' jusqu’à ' + TIER_CAP[j + 1]; }).join(', puis '); }
+  var FAM_HEAD = ['T1 · Extrait', 'T2 · Philtre', 'T3 · Potion', 'T4 · Élixir'];
+  // pastilles de couleur des dragodindes (une par couleur de base)
+  var COLORS = { 'Amande': '#e6cfa1', 'Dorée': '#e3b22d', 'Rousse': '#c0532b', 'Ébène': '#141414', 'Indigo': '#4b45b8', 'Pourpre': '#a3205a',
+                 'Orchidée': '#d97ad4', 'Ivoire': '#f3eedb', 'Turquoise': '#2fc4c0', 'Émeraude': '#2c9e55', 'Prune': '#6d3f9e' };
+  function dd(name) {
+    return '<span class="dd">' + String(name).split(' et ').map(function (c) { return '<i class="dot" style="background:' + (COLORS[c] || '#888') + '"></i>'; }).join('') + esc(name) + '</span>';
+  }
+  // clé de cache : tout l'état sauf l'affichage (étapes cochées, mode détaillé, panneau des prix ouvert)
+  function skey() { return JSON.stringify(S, function (k, v) { return k === 'done' || k === 'expert' || k === 'pricesOpen' ? undefined : v; }); }
 
   // ------------------------------------------------------------ état
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -48,6 +66,10 @@
         });
       }
     } catch (e) { /* réglages illisibles : on garde les valeurs par défaut */ }
+    // tiers : aucune barre ne monte en T4 pour l'XP et la Maturité (pas d'Élixir) → T3 au plus
+    if (d.xpFam === 'Élixir') d.xpFam = 'Potion';
+    if (d.fertFam === 'Élixir') d.fertFam = 'Potion';
+    if (!d.done || typeof d.done !== 'object') d.done = {};
     if (d.finalL == null) d.finalL = 100;
     if (d.finalOpti == null) d.finalOpti = false;
     return d;
@@ -110,7 +132,7 @@
   // ------------------------------------------------------------ calcul (mis en cache par rendu)
   var CACHE = { key: null };
   function compute() {
-    var k = JSON.stringify(S);
+    var k = skey();
     if (CACHE.key === k) return CACHE.val;
     var s = eng();
     var ao = S.allowOpti !== false;
@@ -135,25 +157,32 @@
   // ------------------------------------------------------------ en-tête : réglages globaux
   function renderGlobal() {
     var g = document.getElementById('global');
+    // vue simple : la cible, tes enclos et tes connexions ; les tiers et les Optimakinas se choisissent dans « Mon plan »
+    var tiers = [0, 1, 2].map(function (i) { return [E.FAMILIES[i], 'T' + (i + 1) + ' · jusqu’à ' + TIER_CAP[i] + ' (' + TIER_FUEL[i] + ')']; });
     g.innerHTML =
-      field('Gén. 10 visée', 'target', 'select', { options: GEN10 }) +
-      field('Je veux', 'objective', 'select', { options: [['jours', 'aller le plus vite (temps)'], ['renta', 'gagner le plus par jour'], ['kamas', 'dépenser le moins']] }) +
+      (S.expert ? field('Gén. 10 visée', 'target', 'select', { options: GEN10 }) : '') +
+      (S.expert ? field('Je veux', 'objective', 'select', { options: [['jours', 'aller le plus vite (temps)'], ['renta', 'gagner le plus par jour'], ['kamas', 'dépenser le moins']] }) : '') +
       field('Enclos (6 au plus)', 'enclos', 'select', { num: 1, options: [1, 2, 3, 4, 5, 6].map(function (x) { return [x, x + ' (' + x * 10 + ' places · éleveur ' + [1, 40, 80, 120, 160, 200][x - 1] + ')']; }) }) +
       field('Connexions / jour', 'connexions', 'select', { num: 1, options: [1, 2, 3, 4, 6, 8, 12, 24].map(function (x) { return [x, x + ' (toutes les ' + f(24 / x, 1) + ' h)']; }) }) +
-      field('Carburant pour l’XP', 'xpFam', 'select', { options: E.FAMILIES }) +
-      field('Carburant Amour · Endurance · Maturité', 'fertFam', 'select', { options: E.FAMILIES }) +
-      field('Niveau des captures', 'capLevel', 'number', { min: 1, max: 200, step: 1 }) +
-      field('Optimakinas autorisées', 'allowOpti', 'check');
+      (S.expert ?
+        field('Barre XP', 'xpFam', 'select', { options: tiers }) +
+        field('Barres Amour · Endurance · Maturité', 'fertFam', 'select', { options: tiers }) +
+        field('Niveau des captures', 'capLevel', 'number', { min: 1, max: 200, step: 1 }) +
+        field('Optimakinas autorisées', 'allowOpti', 'check') : '');
   }
 
   // ------------------------------------------------------------ onglets
-  var TABS = [['objectif', '🎯 Gén. 10 : ce qu’il te faut'], ['calcul', '🧮 Calculateur par dragodinde'], ['chemin', '🧬 Chemin étape par étape'], ['niveau', '📈 Niveau des parents (temps)'], ['renta', '⏱️ Carburants et temps'],
+  var TABS = [['plan', '🗺️ Mon plan'], ['objectif', '🎯 Gén. 10 : ce qu’il te faut'], ['calcul', '🧮 Calculateur par dragodinde'], ['chemin', '🧬 Chemin étape par étape'], ['niveau', '📈 Niveau des parents (temps)'], ['renta', '⏱️ Carburants et temps'],
               ['final', '🎲 Dernier croisement'], ['prix', '💰 Prix et réglages'], ['brisage', '⚒️ Brisage (DD, Muldo, Volkorne)'], ['regles', '📖 Règles et sources']];
+  var SIMPLE_TABS = ['plan', 'brisage', 'prix'];   // vue simple ; « Plus de détails » montre les autres
+  function visibleTabs() { return S.expert ? TABS : TABS.filter(function (t) { return SIMPLE_TABS.indexOf(t[0]) >= 0; }); }
   function renderTabs() {
-    if (!TABS.some(function (t) { return t[0] === TAB; })) TAB = 'objectif';
-    document.getElementById('tabs').innerHTML = TABS.map(function (t) {
+    var vis = visibleTabs();
+    if (!vis.some(function (t) { return t[0] === TAB; })) TAB = 'plan';
+    document.getElementById('tabs').innerHTML = vis.map(function (t) {
       return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === TAB) + '">' + t[1] + '</button>';
-    }).join('');
+    }).join('') + '<button type="button" class="more" data-expert="' + (S.expert ? 0 : 1) + '">' +
+      (S.expert ? '✨ Vue simple' : '🔧 Plus de détails (' + (TABS.length - SIMPLE_TABS.length) + ' onglets)') + '</button>';
     var cur = document.querySelector('.tabs [aria-selected=true]');
     if (cur && cur.scrollIntoView && window.innerWidth < 700) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
   }
@@ -180,7 +209,7 @@
     }).join('') + Object.keys(S.makina10 || {}).map(function (sp) {
       return '<label class="field">Ressource Makina gén. 10 ' + esc(sp) + numInput('makina10.' + sp, S.makina10[sp]) + '</label>';
     }).join('') + '</div>';
-    out += '<h4>Carburants (kamas pour 1 000 points ; 0 = tu les fabriques, chaque enclos a les siens)</h4>' + table(['Jauge'].concat(E.FAMILIES), E.JAUGES.map(function (j) {
+    out += '<h4>Carburants (kamas pour 1 000 points ; 0 = tu les fabriques, chaque enclos a les siens)</h4>' + table(['Jauge'].concat(FAM_HEAD), E.JAUGES.map(function (j) {
       return [esc(j)].concat(E.FAMILIES.map(function (fm, i) { return numInput('fuel.' + j + '.' + i, S.fuel[j][i]); }));
     }));
     out += '<h4>Runes</h4><div class="pgrid">' + Object.keys(S.runePrices).map(function (k) {
@@ -192,8 +221,148 @@
   function render() {
     renderGlobal(); renderTabs();
     var main = document.getElementById('main');
-    var fn = { objectif: tabObjectif, calcul: tabCalcul, chemin: tabChemin, niveau: tabNiveau, renta: tabRenta, final: tabFinal, prix: tabPrix, brisage: tabBrisage, regles: tabRegles }[TAB];
+    var fn = { plan: tabPlan, objectif: tabObjectif, calcul: tabCalcul, chemin: tabChemin, niveau: tabNiveau, renta: tabRenta, final: tabFinal, prix: tabPrix, brisage: tabBrisage, regles: tabRegles }[TAB];
     try { main.innerHTML = pricePanel() + fn(); } catch (e) { main.innerHTML = '<div class="box warn">Erreur de calcul : ' + esc(e.message) + '</div>'; console.error(e); }
+  }
+
+  // ------------------------------------------------------------ 0. Mon plan : tableaux pour la dragodinde choisie
+  /* La solution = la stratégie la PLUS RAPIDE (jours d'élevage + ton temps de capture), avec ou sans Makinas selon ton choix.
+     Les tiers de barre et les stratégies « tout au même niveau » sont recalculés à côté pour comparer. */
+  var PCACHE = { key: null };
+  var FILLKEY = { xpFam: 'xpFill', fertFam: 'fertFill' };
+  function planTarget() { var t = S.planTarget; return t && E.TREE[t] && E.TREE[t].gen > 1 ? t : S.target; }
+  function planCompute() {
+    var k = skey();
+    if (PCACHE.key === k) return PCACHE.val;
+    var s = eng(), ao = S.allowOpti !== false, X = planTarget();
+    var main = E.optimize(X, s, 'jours', { allowOpti: ao });
+    var alt = E.optimize(X, s, 'jours', { allowOpti: !ao });
+    var tiers = { xpFam: [], fertFam: [] };
+    [0, 1, 2].forEach(function (i) {
+      ['xpFam', 'fertFam'].forEach(function (key) { var t = clone(s); t[key] = E.FAMILIES[i]; t[FILLKEY[key]] = null; tiers[key].push(E.plan(X, main.policy, t)); });
+    });
+    var uni = [[1, false, '🎣 Capturer plus : parents niveau 1'], [40, false, 'Parents niveau 40'], [100, false, 'Parents niveau 100'], [200, false, 'Parents niveau 200'],
+               [40, true, 'Parents niveau 40 + Makina'], [100, true, 'Parents niveau 100 + Makina'], [167, true, 'Parents niveau 167 + Makina (100 %)']].map(function (u) {
+      var pol = E.uniformPolicy(X, u[0], u[1], 2);
+      if (u[1]) Object.keys(pol).forEach(function (g) { if (E.optiCost(+g, s) === null) pol[g].opti = false; });
+      return { label: u[2], L: u[0], opti: u[1], plan: E.plan(X, pol, s) };
+    });
+    PCACHE = { key: k, val: { s: s, X: X, main: main, alt: alt, tiers: tiers, uni: uni } };
+    return PCACHE.val;
+  }
+  function optiTotal(pl) { return Object.keys(pl.optiCount).reduce(function (a, g) { return a + pl.optiCount[g]; }, 0); }
+  function cnt(x) { return Math.max(1, Math.round(x)); }          // nombre moyen arrondi, au moins 1
+  function upto(x) { return Math.max(1, Math.ceil(x - 0.02)); }   // à prévoir
+  function startLv(m) { return E.TREE[m].gen === 1 ? Math.max(1, Math.round(+S.capLevel || 1)) : 1; }
+  function dayRange(st, en) {   // heures → « 3 → 5 »
+    var a = Math.floor(st / 24) + 1, b = Math.max(a, Math.ceil(en / 24));
+    return a === b ? 'jour ' + a : a + ' → ' + b;
+  }
+  function levelsOf(pl) { var ls = []; pl.nodes.forEach(function (n) { if (ls.indexOf(n.L) < 0) ls.push(n.L); }); ls.sort(function (a, b) { return a - b; }); return ls.length > 1 ? ls[0] + ' à ' + ls[ls.length - 1] : String(ls[0] || '—'); }
+  function optiGens(pl) { var g = Object.keys(pl.optiCount).map(Number).sort(function (a, b) { return a - b; }); return !g.length ? 'non' : (g.length > 2 ? 'gén. ' + g[0] + ' à ' + g[g.length - 1] : 'gén. ' + g.join(', ')); }
+  function tick(id, on) { return '<input type="checkbox" class="tk" data-k="done.' + esc(planTarget()) + '.' + esc(id) + '"' + (on ? ' checked' : '') + ' title="c’est fait">'; }
+  // une monture n'entre et ne sort de l'enclos qu'à une connexion : le temps compte en connexions entières
+  function slotH(h, s) { return Math.max(1, Math.ceil(h / s.refillH - 1e-9)) * s.refillH; }
+  // barre cliquable : clique où tu veux la remplir (0 à 200 000 points, tiers marqués)
+  function gauge(famKey, label, max) {
+    var key = FILLKEY[famKey], F = E.fillOf(S[famKey], S[key]), t = E.tierOf(F);
+    var segs = [[0, 80000, 'T1'], [80000, 140000, 'T2'], [140000, 180000, 'T3'], [180000, 200000, 'T4']].map(function (x) {
+      return '<span class="gseg" style="left:' + x[0] / 2000 + '%;width:' + (x[1] - x[0]) / 2000 + '%">' + x[2] + '</span>';
+    }).join('');
+    return '<div class="grow"><div class="glab">' + label + ' : <b class="gold">' + f(F) + ' points · T' + (t + 1) + '</b> <span class="mini">(' + TIER_FUEL[t] + ')</span></div>' +
+      '<div class="gauge2" data-fill="' + famKey + '" data-max="' + max + '" role="slider" aria-valuemin="1000" aria-valuemax="' + max + '" aria-valuenow="' + F + '" title="clique pour remplir la barre jusqu’ici">' +
+      '<i class="gfill" style="width:' + F / 2000 + '%"></i>' + segs + (max < 200000 ? '<span class="gno" style="left:' + max / 2000 + '%" title="aucun carburant ne monte jusque-là"></span>' : '') + '</div></div>';
+  }
+  function tabPlan() {
+    var P = planCompute(), s = P.s, X = P.X, pl = P.main.plan, ao = S.allowOpti !== false, top = E.TREE[X].gen;
+    var withO = ao ? P.main.plan : P.alt.plan, without = ao ? P.alt.plan : P.main.plan;
+    var done = (S.done && S.done[X]) || {};
+    var scale = pl.critH > 0 ? Math.max(1, pl.days * 24 / pl.critH) : 1;   // places pleines : le calendrier s'étale
+    // choix de la dragodinde : toutes, rangées par génération
+    var opts = '';
+    for (var g = 2; g <= 10; g++) opts += '<optgroup label="Gén. ' + g + '">' + E.NAMES.filter(function (n) { return E.TREE[n].gen === g; }).sort().map(function (n) {
+      return '<option value="' + esc(n) + '"' + (n === X ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</optgroup>';
+    var out = '<div class="phead"><h2>🗺️ Mon plan : ' + dd(X) + ' <span class="mini">gén. ' + top + '</span></h2>' +
+      '<label class="field">Dragodinde visée<select data-k="planTarget">' + opts + '</select></label></div>';
+
+    // 1. les solutions
+    out += h('h3', null, '1. Capturer plus, monter l’XP ou utiliser des Makinas ?');
+    var sol = [{ label: '⚡ Solution la plus rapide', pl: withO, opti: 1 }, { label: '🐢 Solution la plus rapide sans Makina', pl: without, opti: 0 }];
+    var rowsS = sol.map(function (x) {
+      var mine = (x.opti === 1) === ao;
+      return { cls: mine ? 'best' : '', attr: ' data-opti="' + x.opti + '" style="cursor:pointer"', cells: ['<b>' + x.label + '</b>' + (mine ? ' <span class="pill g">ton plan</span>' : ' <span class="mini">clique pour l’adopter</span>'),
+        levelsOf(x.pl), optiGens(x.pl), f(Math.ceil(x.pl.capTot)), f(Math.ceil(optiTotal(x.pl))), f(x.pl.optiK), '<b>' + days(x.pl.days) + '</b>'] };
+    }).concat(P.uni.map(function (u) {
+      return [esc(u.label), String(u.L), u.opti ? optiGens(u.plan) : 'non', f(Math.ceil(u.plan.capTot)), f(Math.ceil(optiTotal(u.plan))), f(u.plan.optiK), days(u.plan.days)];
+    }));
+    out += table(['Stratégie', 'Niveau des parents', 'Makina', 'Captures', 'Makinas', 'Coût des Makinas', 'Durée'], rowsS);
+    out += '<p class="note">Durée avec tes ' + pl.places + ' places et ' + S.connexions + ' connexions par jour. Les deux premières lignes choisissent le niveau, la Makina et le recroisement des ratés génération par génération ; les autres mettent tout au même niveau.</p>';
+
+    // 2. dans l'ordre
+    out += h('h3', null, '2. Ce qu’il faut faire, dans l’ordre');
+    var rowsA = [], nDone = 0, nAll = 0;
+    Object.keys(pl.captures).forEach(function (c) {
+      var id = 'cap-' + c; nAll++; if (done[id]) nDone++;
+      rowsA.push({ cls: done[id] ? 'done' : '', cells: [tick(id, done[id]), '1', dd(c), '<b>' + f(upto(pl.captures[c])) + '</b>', '<span class="mini">capture au filet</span>', '—', 'niv. ' + startLv(c), '—', '—', 'dès le jour 1'] });
+    });
+    var order = {}; P.main.gens.forEach(function (g, i) { order[g] = i + 2; });
+    pl.nodes.forEach(function (n) {
+      var id = n.name; nAll++; if (done[id]) nDone++;
+      rowsA.push({ cls: done[id] ? 'done' : (n.name === X ? 'sel' : ''), cells: [tick(id, done[id]), String(order[n.gen]), dd(n.name), '<b>' + f(cnt(n.need)) + '</b>',
+        dd(n.A) + ' × ' + dd(n.B) + (n.gen === 7 || n.gen === 9 ? ' <span class="pill o">seul couple</span>' : ''),
+        f(cnt(n.consA)) + ' + ' + f(cnt(n.consB)), '<b>niv. ' + n.L + '</b>' + (n.opti ? '<br><span class="pill g">+ Makina</span>' : ''),
+        '<b>' + pct(n.p) + '</b>' + (n.k > 1 ? '<br><span class="mini">raté recroisé : ' + pct(n.pRe) + '</span>' : ''), f(upto(n.att)), dayRange(n.startH * scale, n.doneH * scale)] });
+    });
+    out += '<div class="prog"><div class="pbar"><i style="width:' + Math.round(nDone / Math.max(1, nAll) * 100) + '%"></i></div><span><b>' + nDone + ' / ' + nAll + '</b> lignes faites</span></div>';
+    out += table(['✓', 'Étape', 'À faire', 'Combien', 'Couple', 'Parents', 'Niveau des parents', 'Chance', 'Accou&shy;plements', 'Jours'], rowsA, ['', '', 'l', '', 'l']);
+    out += '<p class="note">Nombres moyens. « Parents » : ceux de l’étape d’avant ; les bébés ratés et les clones (qui repartent au niveau 1) font le reste des accouplements. Coche une ligne finie : c’est gardé sur cet appareil.</p>';
+
+    // 3. les barres : remplissage au clic, et ce que ça donne par jour
+    out += h('h3', null, '3. Tes barres et combien de dragodindes tu montes par jour');
+    out += '<div class="box barres">' + gauge('xpFam', '🍖 Barre XP (Mangeoire)', 180000) + gauge('fertFam', '💗 Amour · Endurance · Maturité', 180000) +
+      '<p class="mini">Clique sur une barre à l’endroit où tu la remplis à chaque connexion. Au-delà de 180 000 : aucun Élixir d’XP ni de Maturité.</p></div>';
+    var places = pl.places, xpDay = E.xpPerHour(s.xpFam, s.refillH, s.xpFill) * 24, fH = E.fertHours(s);
+    var LVD = [20, 40, 60, 80, 100, 150, 200], planL = pl.nodes.map(function (n) { return n.L; });
+    planL.forEach(function (L) { if (LVD.indexOf(L) < 0) LVD.push(L); }); LVD.sort(function (a, b) { return a - b; });
+    var rowsP = LVD.map(function (L) {
+      var xh = E.levelHours(1, L, s), ph = E.prepHours(1, L, s), mine = planL.indexOf(L) >= 0;
+      return { cls: mine ? 'sel' : '', cells: ['<b>' + L + '</b>' + (mine ? ' <span class="pill o">ton plan</span>' : ''), f(E.xpBetween(1, L)), hours(xh), '<b>' + f(places * 24 / slotH(xh, s), 1) + '</b>', hours(ph), '<b>' + f(places * 24 / slotH(ph, s), 1) + '</b>'] };
+    });
+    rowsP.push(['<b>Fécondité seule</b>', '—', '—', '—', hours(fH), '<b>' + f(places * 24 / slotH(fH, s), 1) + '</b>']);
+    out += table(['Niveau visé (depuis le niveau 1)', 'XP par monture', 'Temps d’XP', 'Montées par jour', 'XP + fécondité', 'Prêtes à accoupler par jour'], rowsP);
+    out += '<p class="note">Avec tes ' + places + ' places et ' + S.connexions + ' connexions par jour (toutes les ' + f(s.refillH, 1) + ' h) : ta barre XP donne ' + f(xpDay) + ' XP par jour à chaque monture de l’enclos. ' +
+      'Une monture ne sort qu’à une connexion : son temps compte en connexions entières. L’XP se fait en partie pendant la fécondité (barre Amour).</p>';
+    var tierRows = [['xpFam', 'Barre XP'], ['fertFam', 'Amour · Endurance · Maturité']].map(function (r) {
+      var list = P.tiers[r[0]], cur = E.tierOf(E.fillOf(S[r[0]], S[FILLKEY[r[0]]])), d = list.map(function (p) { return p.days; }), min = Math.min.apply(null, d), best = 0;
+      while (d[best] > min + 0.05) best++;
+      return [esc(r[1])].concat([0, 1, 2].map(function (i) {
+        return '<button type="button" class="tierbtn' + (i === cur ? ' cur' : '') + '" data-tier="' + r[0] + '|' + E.FAMILIES[i] + '">' + days(d[i]) + '</button>';
+      })).concat(['<b class="gold">T' + (best + 1) + '</b>' + (best ? ' <span class="mini">−' + days(d[0] - d[best]) + '</span>' : '')]);
+    });
+    out += table(['Durée du plan si la barre est pleine en…', 'T1 · 80 000<br><span class="mini">Extraits</span>', 'T2 · 140 000<br><span class="mini">+ Philtres</span>', 'T3 · 180 000<br><span class="mini">+ Potions</span>', 'Solution'], tierRows);
+
+    // 4. chance selon le niveau (dernier accouplement)
+    var last = pl.nodes.filter(function (n) { return n.name === X; })[0], A = last.A, B = last.B;
+    out += h('h3', null, '4. Chance de réussite selon le niveau des parents (' + esc(A) + ' × ' + esc(B) + ')');
+    var LV = [1, 20, 40, 60, 80, 100, 120, 150, 167, 200];
+    if (LV.indexOf(last.L) < 0) { LV.push(last.L); LV.sort(function (a, b) { return a - b; }); }
+    var rowsC = LV.map(function (L) {
+      var p0 = E.recovery(A, B, L, L, false, s).p, p1 = E.recovery(A, B, L, L, true, s).p;
+      return { cls: L === last.L ? 'sel' : '', cells: ['<b>' + L + '</b>' + (L === last.L ? ' <span class="pill o">ton plan</span>' : ''), hours(E.levelHours(1, L, s)), pct(p0), pct(p1), f(1 / p0, 1), f(1 / p1, 1)] };
+    });
+    out += table(['Niveau des deux parents', 'XP depuis le niveau 1', 'Chance sans Makina', 'Chance avec Makina', 'Accouplements par réussite, sans', 'avec Makina'], rowsC);
+
+    // 5. Makina : coût par dragodinde réussie
+    out += h('h3', null, '5. Makina : ce qu’elle coûte par dragodinde réussie');
+    var rowsD = P.main.gens.map(function (g) {
+      var ns = pl.nodes.filter(function (n) { return n.gen === g; }), n0 = ns[0], L = n0.L, oc = E.optiCost(g, s);
+      var p0 = E.recovery(n0.A, n0.B, L, L, false, s).p, p1 = E.recovery(n0.A, n0.B, L, L, true, s).p;
+      return [String(g), ns.map(function (n) { return dd(n.name); }).join('<br>'), oc == null ? '<span class="dim">prix ?</span>' : f(oc), 'niv. ' + L, pct(p0), '<b>' + pct(p1) + '</b>',
+        f(1 / p1, 2), oc == null ? '—' : '<b>' + f(oc / p1) + '</b>', f(1 / p0 - 1 / p1, 2), n0.opti ? '<span class="pill g">oui</span>' : 'non'];
+    });
+    out += table(['Gén.', 'Dragodinde', 'Prix d’une Makina', 'Niveau', 'Chance sans', 'Chance avec', 'Makinas par réussite', 'Coût Makina par réussite', 'Accouplements évités par réussite', 'Dans ton plan'], rowsD, ['', 'l']);
+    out += '<p class="note">Une Makina par accouplement (+20 % de chance). Prix : ton prix d’achat dans « Mes prix », sinon le coût du craft.</p>';
+    return out;
   }
 
   // ------------------------------------------------------------ 1. objectif
@@ -406,7 +575,7 @@
     var out = h('h2', null, 'À quel niveau accoupler ? (en temps)');
     out += '<p class="lead">La courbe d’XP monte <b>très vite au début, puis de moins en moins vite</b> : du niveau 1 au 50 il faut ' + hours(E.levelHours(1, 50, s)) +
       ', du 50 au 100 ' + hours(E.levelHours(50, 100, s)) + ', du 100 au 150 ' + hours(E.levelHours(100, 150, s)) + ', du 150 au 200 ' + hours(E.levelHours(150, 200, s)) +
-      ' (carburant « ' + esc(S.xpFam) + ' », ' + S.connexions + ' connexions par jour). La chance, elle, monte en ligne droite : <b>+0,3 %</b> par niveau des deux parents. ' +
+      ' (barre XP en ' + tierLong(S.xpFam) + ', ' + S.connexions + ' connexions par jour). La chance, elle, monte en ligne droite : <b>+0,3 %</b> par niveau des deux parents. ' +
       'Le bon niveau est celui où une heure d’XP de plus ne rapporte plus assez de chance. Un parent neuf consommé est compté à son temps de production.</p>';
     out += '<label class="field" style="max-width:420px">Étape analysée<select data-k="stepX">' + names.map(function (n) {
       return '<option' + (n === S.stepX ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>';
@@ -486,9 +655,9 @@
     var vb = cur && !cur.missing ? E.resultValue(cur.plan, s) : null;
     out += '<div class="cards">' +
       card('Valeur du résultat', vb ? f(vb.total) + ' kamas' : '—', vb ? f(vb.neurones) + ' en neurones + ' + f(vb.genetons) + ' en génétons' : 'prix manquant') +
-      card('Le plus rentable par jour', P.bestPerDay ? esc(P.bestPerDay.xpFam) + ' / ' + esc(P.bestPerDay.fertFam) : '—', P.bestPerDay ? f(P.bestPerDay.perDay) + ' kamas par jour' : '') +
-      card('Le plus rapide', P.fastest ? days(P.fastest.days) : '—', P.fastest ? esc(P.fastest.xpFam) + ' / ' + esc(P.fastest.fertFam) + ' · ' + f(P.fastest.kamas) + ' kamas' : '') +
-      card('Le moins cher', P.cheapest ? f(P.cheapest.kamas) + ' kamas' : '—', P.cheapest ? esc(P.cheapest.xpFam) + ' / ' + esc(P.cheapest.fertFam) + ' · ' + days(P.cheapest.days) : '') + '</div>';
+      card('Le plus rentable par jour', P.bestPerDay ? 'XP ' + tierOf(P.bestPerDay.xpFam) + ' / ' + tierOf(P.bestPerDay.fertFam) : '—', P.bestPerDay ? f(P.bestPerDay.perDay) + ' kamas par jour' : '') +
+      card('Le plus rapide', P.fastest ? days(P.fastest.days) : '—', P.fastest ? 'XP ' + tierOf(P.fastest.xpFam) + ' / ' + tierOf(P.fastest.fertFam) + ' · ' + f(P.fastest.kamas) + ' kamas' : '') +
+      card('Le moins cher', P.cheapest ? f(P.cheapest.kamas) + ' kamas' : '—', P.cheapest ? 'XP ' + tierOf(P.cheapest.xpFam) + ' / ' + tierOf(P.cheapest.fertFam) + ' · ' + days(P.cheapest.days) : '') + '</div>';
     if (P.fastest && P.cheapest && P.fastest !== P.cheapest) {
       var dd = P.cheapest.days - P.fastest.days, dk = P.fastest.kamas - P.cheapest.kamas;
       out += '<div class="box verdict">Aller le plus vite te fait gagner <b>' + days(dd) + '</b> pour <b>' + f(dk) + ' kamas</b> de plus, soit <b>' + f(dd > 0 ? dk / dd : null) + ' kamas par jour gagné</b>. ' +
@@ -497,14 +666,14 @@
     out += '<div class="box">La valeur d’un généton (' + f(E.genetonValue(S)) + ' kamas' + (S.genetonValue == null ? ', calculée depuis les parchemins' : ', saisie à la main') + ') et le neurone (' + f(S.neurone) + ' kamas) se changent dans « Prix et réglages ». ' +
       'Les bébés ratés en chemin (gén. 2 à 9) ne sont pas comptés : ils rapportent en plus, à l’extraction.</div>';
     var rows = P.rows.slice().sort(function (a, b) { return (a.missing ? 1 : 0) - (b.missing ? 1 : 0) || (b.perDay || 0) - (a.perDay || 0); }).map(function (r) {
-      var lab = '<b>' + esc(r.xpFam) + '</b> / ' + esc(r.fertFam);
+      var lab = 'XP <b>' + tierOf(r.xpFam) + '</b> / ' + tierOf(r.fertFam);
       if (r.missing) return [lab, '—', '—', '—', '—', '—', '—', '—', '<span class="dim">prix de carburant manquant</span>'];
       var mine = r.xpFam === S.xpFam && r.fertFam === S.fertFam;
       var cls = r === P.bestPerDay ? 'best' : (mine ? 'sel' : '');
       return { cls: cls, attr: ' data-fuel="' + esc(r.xpFam) + '|' + esc(r.fertFam) + '" style="cursor:pointer"', cells: [lab + (mine ? ' <span class="pill o">ton réglage</span>' : ''), days(r.days), f(r.fuel), f(r.plan.optiK), f(r.kamas), f(r.value),
         '<b class="' + (r.profit >= 0 ? 'ok' : 'ko') + '">' + f(r.profit) + '</b>', '<b>' + f(r.perDay) + '</b>', r.costPerDay == null ? (r === P.cheapest ? 'référence' : '<span class="dim">pas plus rapide</span>') : f(r.costPerDay)] };
     });
-    out += table(['Carburant XP / Amour · Endurance · Maturité', 'Durée', 'Carburants (Amour · Endurance · Maturité + XP)', 'Makinas', 'Coût total', 'Valeur obtenue', 'Bénéfice', 'Bénéfice par jour', 'Kamas par jour gagné'], rows);
+    out += table(['Tier barre XP / Amour · Endurance · Maturité', 'Durée', 'Carburants (Amour · Endurance · Maturité + XP)', 'Makinas', 'Coût total', 'Valeur obtenue', 'Bénéfice', 'Bénéfice par jour', 'Kamas par jour gagné'], rows);
     out += '<p class="note">Clique une ligne pour l’adopter comme réglage (elle passe en haut de page). « Kamas par jour gagné » : ce que coûte chaque jour gagné par rapport à la solution la moins chère. ' +
       'Avec ' + S.connexions + ' connexions par jour, un carburant rapide ne rend féconde plus vite que si la jauge se vide avant ta connexion suivante : monte le nombre de connexions en haut de page pour voir la différence.</p>';
     out += h('h3', null, 'Ce que coûte chaque carburant à crafter');
@@ -514,7 +683,7 @@
         return numInput('fuel.' + j + '.' + i, pr) + (rn && rn !== '—' ? '<br><span class="mini">' + esc(rn) + '</span>' : '');
       }));
     });
-    out += table(['Jauge (kamas pour 1 000 pts)'].concat(E.FAMILIES), fr);
+    out += table(['Jauge (kamas pour 1 000 pts)'].concat(FAM_HEAD), fr);
     out += '<p class="note">Recette la moins chère de chaque case, d’après les prix de ses ingrédients (classeur, relevés Ombre sinon Kourial). Tes prix se changent dans « Prix et réglages ».</p>';
     return out;
   }
@@ -539,7 +708,7 @@
     out += '<br><b>Makinas :</b> ' + f(pl.optiK) + ' kamas · <b>Filets :</b> ' + f(pl.filetK) + ' kamas.';
     out += '<br><span class="note"><b>Chaque enclos a ses propres jauges</b> : ses carburants se posent dans cet enclos et nourrissent ses ' + S.perEnclos + ' montures, ' +
       'et la mise de départ (le socle sous le seuil de ton carburant) se pose dans chaque enclos ; elle reste dans les jauges. ' +
-      'XP au carburant « ' + esc(S.xpFam) + ' », Amour, Endurance et Maturité au « ' + esc(S.fertFam) + ' », ' + S.connexions + ' connexions par jour. ' +
+      'Barre XP en ' + tierLong(S.xpFam) + ', Amour, Endurance et Maturité en ' + tierLong(S.fertFam) + ', ' + S.connexions + ' connexions par jour. ' +
       'Chaque tranche de jauge prend le carburant le moins cher capable de l’atteindre (seuils 80 000 / 140 000 / 180 000 / 200 000).</span></div>';
     return out;
   }
@@ -585,17 +754,17 @@
     out += '<p class="lead">Les prix viennent du classeur (relevés communautaires Ombre, sinon Kourial). Mets tes prix du jour : tout se recalcule et reste gardé sur cet appareil.</p>';
     out += h('h3', null, 'Carburants : kamas pour 1 000 points (recette la moins chère)');
     var rows = E.JAUGES.map(function (j) { return [esc(j)].concat(E.FAMILIES.map(function (fm, i) { return '<input type="number" step="any" data-k="fuel.' + j + '.' + i + '" data-num="1" value="' + (S.fuel[j][i] == null ? '' : S.fuel[j][i]) + '" placeholder="?">'; })); });
-    out += table(['Jauge'].concat(E.FAMILIES), rows);
+    out += table(['Jauge'].concat(FAM_HEAD), rows);
     out += '<p class="note">0 par défaut : tu fabriques tes carburants. Mets ton prix (achat HDV ou valeur de tes ressources) et le coût sur ton élevage s’affiche dans l’onglet du chemin, par enclos.</p>';
     out += '<details><summary class="mini">Repère : prix HDV relevés dans le classeur (kamas pour 1 000 points)</summary>' + table(['Jauge'].concat(E.FAMILIES), E.JAUGES.map(function (j) { return [esc(j)].concat(E.FAMILIES.map(function (fm, i) { var v = (S.fuelRef || DD_DEFAULTS.fuelRef)[j][i]; return v == null ? '—' : f(v, 1); })); })) + '</details>';
     out += h('h3', null, 'Ce que coûte ton carburant, avec tes connexions');
     var fr = E.FAMILIES.map(function (fm) {
       var t = clone(s); t.xpFam = fm; t.fertFam = fm;
       var c = E.refillCostPer1000(fm, s.refillH, S.fuel['Expérience']), xh = E.xpPerHour(fm, s.refillH);
-      return [fm, f(xh), c == null ? '—' : f(c, 1), hours(E.levelHours(1, 100, t)) + ' · ' + f(E.levelCost(1, 100, t)), hours(E.levelHours(1, 167, t)) + ' · ' + f(E.levelCost(1, 167, t)),
+      return [FAM_HEAD[E.FAMILIES.indexOf(fm)], f(xh), c == null ? '—' : f(c, 1), hours(E.levelHours(1, 100, t)) + ' · ' + f(E.levelCost(1, 100, t)), hours(E.levelHours(1, 167, t)) + ' · ' + f(E.levelCost(1, 167, t)),
               hours(E.levelHours(1, 200, t)) + ' · ' + f(E.levelCost(1, 200, t)), hours(E.fertHours(t)) + ' · ' + f(E.fertCost(t))];
     });
-    out += table(['Famille', 'XP / heure (moyenne)', 'Kamas / 1 000 XP', 'Niv. 100 : temps · kamas', 'Niv. 167', 'Niv. 200', 'Rendre féconde : temps · kamas'], fr);
+    out += table(['Tier (carburant)', 'XP / heure (moyenne)', 'Kamas / 1 000 XP', 'Niv. 100 : temps · kamas', 'Niv. 167', 'Niv. 200', 'Rendre féconde : temps · kamas'], fr);
     out += '<p class="note">Kamas par monture : une jauge nourrit les ' + S.perEnclos + ' montures de l’enclos. Entre deux connexions la jauge redescend de palier : l’XP moyenne tient compte de ce ralentissement (Élixir à 40 XP / 10 s seulement au-dessus de 180 000).</p>';
     out += h('h3', null, 'Optimakinas de Dragodinde');
     var orow = Object.keys(E.OPTI).map(function (g) {
@@ -631,6 +800,36 @@
   }
 
   // ------------------------------------------------------------ 6. brisage
+  // ------------------------------------------------------------ brisage : la solution, dragodinde par dragodinde
+  /* Pour une dragodinde déjà produite (un raté, un surplus) : extraire ses neurones tout de suite, la briser au niveau le plus
+     rentable EN TEMPS (kamas en plus par jour de place d'enclos), ou la vendre au niveau 200 à ton prix. */
+  function brisageSolution() {
+    var s = compute().s, X0 = planTarget();
+    var names = E.NAMES.slice().sort(function (a, b) { return E.TREE[a].gen - E.TREE[b].gen || a.localeCompare(b); });
+    var rows = names.map(function (X) {
+      var r1 = E.brisageDD(X, 1, s), neur = r1.extract, bt = E.bestBrisageTime(X, s), sale = E.saleDD(X, s), top = E.bestBrisageLevel(X, s);
+      var opts = [], base = bt ? bt.base : 0;
+      opts.push(base > 0 ? { t: 'Briser tout de suite', v: 0 } : { t: E.TREE[X].gen >= 2 ? 'Extraire les neurones' : 'Briser tout de suite', v: 0 });
+      if (bt && bt.best && bt.best.perPlaceDay > 0) opts.push({ t: 'Briser au niv. ' + bt.best.L, v: bt.best.perPlaceDay });
+      if (sale && sale.perPlaceDay > 0) opts.push({ t: 'Vendre au niv. 200', v: sale.perPlaceDay });
+      var win = opts.reduce(function (m, o) { return o.v > m.v ? o : m; });
+      var bCell = !bt ? '<span class="dim">prix de rune ?</span>' : (bt.best && bt.best.perPlaceDay > 0 ?
+        '<b>niv. ' + bt.best.L + '</b> · ' + f(bt.best.gain + neur) + ' · ' + hours(bt.best.hours) : '<span class="dim">jamais mieux</span>');
+      var bDay = bt && bt.best && bt.best.perPlaceDay > 0 ? '<b class="ok">+' + f(bt.best.perPlaceDay) + '</b>' : '—';
+      var sCell = numInput('sell200.' + X, (S.sell200 || {})[X], 'ton prix') + (sale ? '<br><span class="mini">' + f(sale.gain + neur) + ' · ' + hours(sale.hours) + ' · ' +
+        (sale.perPlaceDay > 0 ? '<b class="ok">+' + f(sale.perPlaceDay) + '</b>' : '<span class="ko">' + f(sale.perPlaceDay) + '</span>') + ' / place / jour</span>' : '');
+      return { cls: X === X0 ? 'sel' : '', cells: [dd(X), String(E.TREE[X].gen), neur ? f(neur) : '—', r1.missing ? '<span class="dim">?</span>' : f(r1.kamas - (r1.xp || 0)),
+        bCell, bDay, top && top.gain > 0 ? 'niv. ' + top.L + ' · ' + f(top.gain + neur) : '—', sCell, '<b class="gold">' + win.t + '</b>'] };
+    });
+    var out = h('h2', null, '⚒️ Briser, vendre ou extraire ? La solution pour chaque dragodinde');
+    out += table(['Dragodinde', 'Gén.', 'Neurones<br><span class="mini">tout de suite</span>', 'Briser au niv. 1<br><span class="mini">tout de suite</span>',
+      'Briser au meilleur niveau<br><span class="mini">niveau · kamas · temps d’XP</span>', 'Kamas en plus<br><span class="mini">par place et par jour</span>',
+      'Max de kamas<br><span class="mini">sans compter le temps</span>', 'Vendre au niv. 200<br><span class="mini">ton prix · kamas · temps · par jour</span>', 'Solution'], rows, ['l', '', '', '', 'l', '', '', 'l', 'l']);
+    out += '<p class="note">Kamas nets : runes (ou vente, taxe déduite) moins l’XP, carburants à tes prix. « Kamas en plus par place et par jour » : ce que la monture rapporte de plus que le mieux immédiat (neurones ou brisage au niveau 1), ' +
+      'divisé par les jours qu’elle occupe une place d’enclos. Le meilleur niveau est celui qui maximise ce chiffre. Laisse vide le prix de vente d’une dragodinde qui ne se vend pas.</p>';
+    return out;
+  }
+
   function brisageDDSection() {
     var s = compute().s, b = S.ddBrise, L = Math.max(1, Math.min(200, Math.round(b.L || 100)));
     var out = h('h2', null, 'Dragodindes : briser ou extraire ?');
@@ -663,19 +862,18 @@
     var trs = priced.concat(unpriced).map(function (r) {
       var be = r.breakEven, bt = E.bestBrisageTime(r.X, s), sale = E.saleDD(r.X, s);
       var tcell = !bt ? '<span class="dim">prix ?</span>' : (bt.best && bt.best.perPlaceDay > 0 ? 'niv. ' + bt.best.L + ' · <b>+' + f(bt.best.perPlaceDay) + '</b>' : (bt.base > 0 ? 'briser tout de suite' : 'extraire'));
-      var scell = numInput('sell200.' + r.X, (S.sell200 || {})[r.X], 'ton prix') + (sale ? '<br><span class="mini">' + (sale.perPlaceDay > 0 ? '<b class="ok">+' + f(sale.perPlaceDay) + '</b>' : '<span class="ko">' + f(sale.perPlaceDay) + '</span>') + ' / place / jour</span>' : '');
       return { cls: r.gain > 0 ? 'best' : '', cells: ['<b>' + esc(r.X) + '</b>', r.gen, bonusTxt(r), '<span class="mini">' + runesTxt(r) + '</span>',
         r.missing ? '<span class="dim">' + f(r.kamas) + ' + ?</span>' : f(r.kamas), f(r.xp), f(r.extract),
         r.missing ? (r.gain > 0 ? '<b class="ok">≥ ' + f(r.gain) + '</b>' : '—') : '<b class="' + (r.gain >= 0 ? 'ok' : 'ko') + '">' + f(r.gain) + '</b>',
-        be ? (be.price <= 0 ? '<span class="ok">déjà rentable</span>' : esc(be.rune) + ' ≥ <b>' + f(be.price) + '</b>') : '—', tcell, scell] };
+        be ? (be.price <= 0 ? '<span class="ok">déjà rentable</span>' : esc(be.rune) + ' ≥ <b>' + f(be.price) + '</b>') : '—', tcell] };
     });
     out += table(['Dragodinde', 'Gén.', 'Bonus au niveau ' + L, 'Runes obtenues', 'Kamas des runes', 'Coût de l’XP', 'Extraction<br>(neurones)', 'Brisage −<br>extraction', 'Rentable si',
-      'En temps : briser au<br><span class="mini">kamas en plus / place / jour</span>', 'Vente niv. 200 (ton prix)<br><span class="mini">kamas en plus / place / jour</span>'], trs, ['l', '', 'l', 'l']);
+      'En temps : briser au<br><span class="mini">kamas en plus / place / jour</span>'], trs, ['l', '', 'l', 'l']);
     out += '<p class="note"><b>En temps</b> : une monture que tu montes occupe une place d’enclos. « Kamas en plus / place / jour » = ce qu’elle rapporte de plus que le mieux immédiat (l’extraire, ou la briser tout de suite), ' +
       'divisé par les jours d’XP. Les prix de vente au niveau 200 sont à toi : laisse vide les dragodindes qui ne se vendent pas.</p>';
     out += '<p class="note">« Rentable si » : prix de vente de la rune simple (taxe déduite) à partir duquel briser rapporte autant qu’extraire, en comptant 0 pour les autres runes sans prix. ' +
       '<b>Le brisage ne donne que des runes simples.</b> 3 simples fusionnent en 1 Pa, 3 Pa en 1 Ra : la page compte chaque simple au meilleur de son prix, du prix de la Pa ÷ 3 et de la Ra ÷ 9, ' +
-      'et la flèche dorée dit quand fusionner (ex. « → 6,7 Ra Vi »). Coût de l’XP : carburant « ' + esc(S.xpFam) + ' », partagé entre les ' + S.perEnclos + ' montures de l’enclos.</p>';
+      'et la flèche dorée dit quand fusionner (ex. « → 6,7 Ra Vi »). Coût de l’XP : barre en ' + tierLong(S.xpFam) + ', partagé entre les ' + S.perEnclos + ' montures de l’enclos.</p>';
     out += h('h3', null, 'Prix des runes (Ombre) — mets les tiens');
     var rp = Object.keys(S.runePrices).map(function (k) {
       return [esc(k), '<input type="number" step="any" data-k="runePrices.' + k + '" data-num="1" value="' + (S.runePrices[k] == null ? '' : S.runePrices[k]) + '" placeholder="?">'];
@@ -707,7 +905,8 @@
     }
     var best = function (k) { return fine.filter(function (r) { return r[k] != null && isFinite(r[k]); }).reduce(function (m, r) { return r[k] > m[k] ? r : m; }); };
     var bp = best('pct'), bd = best('perDay'), bg = best('profit'), bpp = best('perPlaceDay');
-    var out = brisageDDSection() + '<hr style="border:0;border-top:1px solid var(--line);margin:26px 0">' + h('h2', null, 'Muldo / Volkorne : à quel niveau briser ?');
+    var out = brisageSolution() + '<details class="detail"><summary>Détail : les runes de chaque dragodinde à un niveau choisi</summary>' + brisageDDSection() + '</details>' +
+      '<hr style="border:0;border-top:1px solid var(--line);margin:26px 0">' + h('h2', null, 'Muldo / Volkorne : à quel niveau briser ?');
     out += '<p class="lead">On monte les montures capturées à un niveau, puis on les brise pour des runes Ga PM (muldo) ou Ga PA (volkorne). ' +
       (b.model === 'video' ? 'Formule de la vidéo : runes = (3 × niveau/100 × poids × 60 / 200 + 1) / 100.' :
         'Formule « jeu » : runes = (3 × 1 × poids × niveau / 200 + 1) × <b>50 %</b> / poids. Elle retrouve les deux mesures de la vidéo : <b>0,76</b> rune au niveau 100 (≈ 0,80 mesuré) et <b>1,51</b> au niveau 200 (76 runes pour 50 muldos).') + '</p>';
@@ -806,6 +1005,8 @@
     if ((k === 'calc.k' || /^calc.perGen.d+.k$/.test(k)) && v != null) v = Math.max(1, Math.min(8, Math.round(v)));
     if (k === 'calc.mult' && v != null) v = Math.max(0, v);
     if (k === 'enclos' && v != null) v = Math.max(1, Math.min(6, Math.round(v)));
+    if (k === 'xpFam') S.xpFill = null;
+    if (k === 'fertFam') S.fertFill = null;
     setPath(k, v);
     if (k === 'brisage.weight') S.brisage.rune = v === 100 ? 'PA' : 'PM';
     save(); render();
@@ -813,15 +1014,27 @@
   document.addEventListener('change', onChange);
   document.addEventListener('toggle', function (e) { if (e.target && e.target.id === 'mes-prix') { S.pricesOpen = e.target.open; save(); } }, true);
   document.addEventListener('click', function (e) {
+    var ex = e.target.closest('[data-expert]');
+    if (ex) { S.expert = ex.getAttribute('data-expert') === '1'; save(); render(); return; }
+    var ti = e.target.closest('[data-tier]');
+    if (ti) { var tp = ti.getAttribute('data-tier').split('|'); S[tp[0]] = tp[1]; S[tp[0] === 'xpFam' ? 'xpFill' : 'fertFill'] = null; save(); render(); return; }
+    var gz = e.target.closest('[data-fill]');
+    if (gz) {   // barre cliquée : remplissage à l'endroit du clic, arrondi à 1 000 points
+      var rc = gz.getBoundingClientRect(), fam = gz.getAttribute('data-fill'), mx = +gz.getAttribute('data-max') || 200000;
+      var F = Math.max(1000, Math.min(mx, Math.round((e.clientX - rc.left) / rc.width * 200) * 1000));
+      S[fam === 'xpFam' ? 'xpFill' : 'fertFill'] = F; S[fam] = E.FAMILIES[E.tierOf(F)]; save(); render(); return;
+    }
+    var op = e.target.closest('[data-opti]');
+    if (op) { S.allowOpti = op.getAttribute('data-opti') === '1'; save(); render(); return; }
     var tb = e.target.closest('[data-tab]');
     if (tb) { TAB = tb.getAttribute('data-tab'); history.replaceState(null, '', '#' + TAB); render(); window.scrollTo(0, 0); return; }
     var fu = e.target.closest('[data-fuel]');
-    if (fu) { var pp = fu.getAttribute('data-fuel').split('|'); S.xpFam = pp[0]; S.fertFam = pp[1]; save(); render(); return; }
+    if (fu) { var pp = fu.getAttribute('data-fuel').split('|'); S.xpFam = pp[0]; S.fertFam = pp[1]; S.xpFill = null; S.fertFill = null; save(); render(); return; }
     var fr = e.target.closest('[data-final]');
     if (fr) { S.finalX = fr.getAttribute('data-final'); save(); render(); return; }
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
-  window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'objectif'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (en temps : ratés recroisés, calculateur par dragodinde, 6 enclos)';
+  window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'plan'; render(); });
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (« Mon plan » en tableaux pour toute dragodinde, barres à remplir au clic, brisage : la solution par dragodinde)';
   render();
 })();
