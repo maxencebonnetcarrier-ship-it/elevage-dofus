@@ -140,59 +140,47 @@
 
   // ------------------------------------------------------------ calcul (mis en cache par rendu)
   var CACHE = { key: null };
+  function PT() { return planTarget(); }
+  function OBJ() { return planMode() === 'renta' ? 'renta' : 'jours'; }   // « sans Makina » = le plus rapide, Makinas interdites
   function compute() {
     var k = skey();
     if (CACHE.key === k) return CACHE.val;
     var s = eng();
-    var ao = S.allowOpti !== false;
-    var main = E.optimize(S.target, s, S.objective, { allowOpti: ao });
-    var other = E.optimize(S.target, s, S.objective === 'jours' ? 'renta' : 'jours', { allowOpti: ao, starts: 1 });
+    var ao = planMode() !== 'sans';
+    var main = E.optimize(PT(), s, OBJ(), { allowOpti: ao });
+    var other = E.optimize(PT(), s, OBJ() === 'jours' ? 'renta' : 'jours', { allowOpti: ao, starts: 1 });
     var pl = main.plan;
     if (S.safety === '90') {   // assez d'essais pour réussir la dernière étape 9 fois sur 10
-      var top = pl.nodes.filter(function (n) { return n.name === S.target; })[0];
+      var top = pl.nodes.filter(function (n) { return n.name === PT(); })[0];
       var n90 = top.p >= 1 ? 1 : Math.ceil(Math.log(0.1) / Math.log(1 - top.p));
       var s2 = clone(s); s2.topNeed = n90 * top.p;
-      pl = E.plan(S.target, main.policy, s2); pl.n90 = n90;
+      pl = E.plan(PT(), main.policy, s2); pl.n90 = n90;
     }
     var uni = [[1, false], [40, false], [40, true], [100, false], [100, true], [167, true], [200, false]].map(function (x) {
-      var pol = E.uniformPolicy(S.target, x[0], x[1], 2), sans = [];
+      var pol = E.uniformPolicy(PT(), x[0], x[1], 2), sans = [];
       if (x[1]) Object.keys(pol).forEach(function (g) { if (E.optiCost(+g, s) === null) { pol[g].opti = false; sans.push(g); } });
-      return { label: 'Tout au niveau ' + x[0] + (x[1] ? ' + Optimakina' : '') + ', ratés recroisés une fois', plan: E.plan(S.target, pol, s), why: sans.length ? 'sans Optimakina gén. ' + sans.join(', ') + ' (prix manquant)' : '' };
+      return { label: 'Tout au niveau ' + x[0] + (x[1] ? ' + Optimakina' : '') + ', ratés recroisés une fois', plan: E.plan(PT(), pol, s), why: sans.length ? 'sans Optimakina gén. ' + sans.join(', ') + ' (prix manquant)' : '' };
     });
     CACHE = { key: k, val: { s: s, main: main, other: other, pl: pl, uni: uni } };
     return CACHE.val;
   }
 
   // ------------------------------------------------------------ en-tête : réglages globaux
-  function renderGlobal() {
-    var g = document.getElementById('global');
-    if (!S.expert) { g.innerHTML = ''; return; }
-    // vue simple : la cible, tes enclos et tes connexions ; les tiers et les Optimakinas se choisissent dans « Mon plan »
-    var tiers = [0, 1, 2].map(function (i) { return [E.FAMILIES[i], 'T' + (i + 1) + ' · jusqu’à ' + TIER_CAP[i] + ' (' + TIER_FUEL[i] + ')']; });
-    g.innerHTML =
-      (S.expert ? field('Gén. 10 visée', 'target', 'select', { options: GEN10 }) : '') +
-      (S.expert ? field('Je veux', 'objective', 'select', { options: [['jours', 'aller le plus vite (temps)'], ['renta', 'gagner le plus par jour'], ['kamas', 'dépenser le moins']] }) : '') +
-      field('Enclos (6 au plus)', 'enclos', 'select', { num: 1, options: [1, 2, 3, 4, 5, 6].map(function (x) { return [x, x + ' (' + x * 10 + ' places · éleveur ' + [1, 40, 80, 120, 160, 200][x - 1] + ')']; }) }) +
-      field('Connexions / jour', 'connexions', 'select', { num: 1, options: [1, 2, 3, 4, 6, 8, 12, 24].map(function (x) { return [x, x + ' (toutes les ' + f(24 / x, 1) + ' h)']; }) }) +
-      (S.expert ?
-        field('Barre XP', 'xpFam', 'select', { options: tiers }) +
-        field('Barres Amour · Endurance · Maturité', 'fertFam', 'select', { options: tiers }) +
-        field('Niveau des captures', 'capLevel', 'number', { min: 1, max: 200, step: 1 }) +
-        field('Optimakinas autorisées', 'allowOpti', 'check') : '');
-  }
+  // plus de barre en haut : tout se règle dans « Mon plan », et les autres calculs le suivent
+  function renderGlobal() { document.getElementById('global').innerHTML = ''; }
 
   // ------------------------------------------------------------ onglets
   var TABS = [['plan', '🗺️ Mon plan'], ['objectif', '🎯 Gén. 10 : ce qu’il te faut'], ['calcul', '🧮 Calculateur par dragodinde'], ['chemin', '🧬 Chemin étape par étape'], ['niveau', '📈 Niveau des parents (temps)'], ['renta', '⏱️ Carburants et temps'],
               ['final', '🎲 Dernier croisement'], ['prix', '💰 Prix et réglages'], ['brisage', '⚒️ Brisage (DD, Muldo, Volkorne)'], ['regles', '📖 Règles et sources']];
   var SIMPLE_TABS = ['plan', 'brisage', 'prix'];   // vue simple ; « Plus de détails » montre les autres
-  function visibleTabs() { return S.expert ? TABS : []; }
+  function visibleTabs() { return S.expert ? TABS.filter(function (t) { return t[0] !== 'plan'; }) : []; }
   function renderTabs() {
     var vis = visibleTabs();
-    if (!vis.some(function (t) { return t[0] === TAB; })) TAB = 'plan';
+    if (!vis.some(function (t) { return t[0] === TAB; })) TAB = vis.length ? vis[0][0] : 'plan';
     document.getElementById('tabs').innerHTML = vis.map(function (t) {
       return '<button type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (t[0] === TAB) + '">' + t[1] + '</button>';
     }).join('') + '<button type="button" class="more" data-expert="' + (S.expert ? 0 : 1) + '">' +
-      (S.expert ? '✨ Vue simple (une page)' : '🔧 Tous les détails (' + TABS.length + ' onglets)') + '</button>';
+      (S.expert ? '🗺️ Retour à mon plan' : '📊 Autres calculs (selon ton plan)') + '</button>';
     var cur = document.querySelector('.tabs [aria-selected=true]');
     if (cur && cur.scrollIntoView && window.innerWidth < 700) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
   }
@@ -228,11 +216,18 @@
     out += '</div></details>';
     return out;
   }
+  // en tête des autres calculs : ce que dit ton plan (rien ne se règle ici)
+  function planLine() {
+    var s = eng(), fx = E.fillOf(s.xpFam, s.xpFill), ff = E.fillOf(s.fertFam, s.fertFill), N = Math.max(1, Math.round(+S.planCount || 1));
+    return '<div class="box planline">🗺️ <b>Selon ton plan</b> : ' + f(N) + ' × ' + dd(PT()) + ' · ' + MODES[planMode()] + ' · ' + s.enclos + ' enclos (' + s.enclos * s.perEnclos + ' places) · ' +
+      S.connexions + ' connexions par jour · XP ' + f(fx) + ' (T' + (E.tierOf(fx) + 1) + ') · Amour · Endurance · Maturité ' + f(ff) + ' (T' + (E.tierOf(ff) + 1) + ')' +
+      (S.porteurs !== false ? ' · porteurs' : '') + ' · <button type="button" class="btn" data-expert="0">✏️ modifier</button></div>';
+  }
   function render() {
     renderGlobal(); renderTabs();
     var main = document.getElementById('main');
     var fn = !S.expert ? tabPlan : { plan: tabPlan, objectif: tabObjectif, calcul: tabCalcul, chemin: tabChemin, niveau: tabNiveau, renta: tabRenta, final: tabFinal, prix: tabPrix, brisage: tabBrisage, regles: tabRegles }[TAB];
-    try { main.innerHTML = (fn === tabPlan ? '' : pricePanel()) + fn(); } catch (e) { main.innerHTML = '<div class="box warn">Erreur de calcul : ' + esc(e.message) + '</div>'; console.error(e); }
+    try { main.innerHTML = (fn === tabPlan ? '' : planLine() + pricePanel()) + fn(); } catch (e) { main.innerHTML = '<div class="box warn">Erreur de calcul : ' + esc(e.message) + '</div>'; console.error(e); }
   }
 
   // ------------------------------------------------------------ 0. Mon élevage : tout sur une page, en tableaux
@@ -267,7 +262,17 @@
     });
     var nc = clone(s); nc.porteurs = false;
     var noCarry = E.plan(X, main.policy, nc);
-    PCACHE = { key: k, val: { s: s, X: X, modes: modes, main: main, tiers: tiers, uni: uni, noCarry: noCarry } };
+    // débit en continu : mesuré sur un grand élevage (au moins 50), où le démarrage ne pèse plus ; durée : sur TON nombre
+    // un grand élevage recroise plus : sa stratégie est optimisée à part (même objectif), sauf si ton nombre est déjà grand
+    var bigNeed = Math.max(50, s.topNeed || 1), bigPol = main.policy;
+    if ((s.topNeed || 1) < 50) { var bs = clone(s); bs.topNeed = bigNeed; bigPol = E.optimize(X, bs, planMode() === 'renta' ? 'renta' : 'jours', { allowOpti: planMode() !== 'sans', starts: 1 }).policy; }
+    var sizes = [1, 2, 3, 4, 5, 6].map(function (e) {
+      var t = clone(s); t.enclos = e; var z = E.plan(X, main.policy, t);
+      var b = clone(t); b.topNeed = bigNeed; var big = E.plan(X, bigPol, b);
+      z.perWeek = 7 * 24 * big.places / (big.placeH / big.need[X]); z.capPerWeek = z.perWeek * big.capTot / big.need[X];
+      return z;
+    });
+    PCACHE = { key: k, val: { s: s, X: X, modes: modes, main: main, tiers: tiers, uni: uni, noCarry: noCarry, sizes: sizes } };
     return PCACHE.val;
   }
   function optiTotal(pl) { return Object.keys(pl.optiCount).reduce(function (a, g) { return a + pl.optiCount[g]; }, 0); }
@@ -467,7 +472,18 @@
     out += '<div class="form" style="max-width:320px">' + field('Montures capturées par jour', 'brisage.capturesPerDay', 'number', { min: 1, step: 1 }) + '</div>';
     out += table(['Monture', 'Rune', 'Prix de la rune', 'Briser au', 'Temps en enclos', 'Runes par monture', 'Brisées par jour', 'Kamas par monture', 'Kamas par jour'], mrows);
     out += '<p class="note">Avec tes barres (' + f(xpDay) + ' XP par jour), tes ' + places + ' places (les mêmes que pour les dragodindes) et tes captures par jour. Taux de brisage 50 %, niveau de l’objet = niveau de la monture.</p>';
-    out += '<p style="margin-top:20px"><button type="button" class="btn" data-expert="1">🔧 Tous les détails (10 onglets)</button></p>';
+    // ---- 8. élevage en continu, selon sa taille
+    out += h('h3', null, '8. Ton élevage en continu, selon sa taille');
+    var Nn = Math.max(1, Math.round(+S.planCount || 1));
+    var rowsZ = P.sizes.map(function (z, i) {
+      var e = i + 1, wk = z.perWeek, caps = z.capPerWeek, lock = ENCLOS_LVL[i] > (+S.eleveur || 1);
+      return { cls: e === s.enclos ? 'sel' : (lock ? 'alt' : ''), cells: ['<b>' + e + '</b>' + (e === s.enclos ? ' <span class="pill o">ton plan</span>' : ''), f(z.places),
+        lock ? '🔒 niv. ' + ENCLOS_LVL[i] : 'niv. ' + ENCLOS_LVL[i], '<b>' + f(wk, wk < 10 ? 1 : 0) + '</b>', f(caps), days(z.days), f(z.capTot)] };
+    });
+    out += table(['Enclos', 'Places', 'Niveau d’éleveur', esc(X) + ' par semaine<br><span class="mini">à plein régime</span>', 'Captures par semaine', 'Durée pour tes ' + f(Nn), 'Captures pour tes ' + f(Nn)], rowsZ);
+    out += '<p class="note">« À plein régime » : tes places toujours pleines, chaque génération relancée dès que la précédente libère ses parents. ' +
+      'Le débit est mesuré sur un élevage d’au moins 50, avec la stratégie qui lui convient (plus de tours de recroisement). La durée pour ton nombre compte aussi le démarrage (monter jusqu’à la gén. ' + top + '). Mêmes barres et mêmes connexions que ton plan.</p>';
+    out += '<p style="margin-top:20px"><button type="button" class="btn" data-expert="1">📊 Autres calculs (selon ton plan)</button></p>';
     return out;
   }
 
@@ -484,8 +500,8 @@
       rows.push({ cls: cls, cells: [label, '<b>' + days(pl.days) + '</b>', f(Math.ceil(pl.capWithMargin)) + ' <span class="mini">(' + hours(capH(pl)) + ')</span>',
         f(Math.ceil(optiN)), f(pl.kamas), f(perDay(pl)), note || ''] });
     }
-    push('<b>Recommandée — ' + OBJ_LAB[S.objective] + '</b>', R.main.plan, '', 'best');
-    push('Recommandée — ' + (S.objective === 'jours' ? OBJ_LAB.renta : OBJ_LAB.jours), R.other.plan, '');
+    push('<b>Recommandée — ' + OBJ_LAB[OBJ()] + '</b>', R.main.plan, '', 'best');
+    push('Recommandée — ' + (OBJ() === 'jours' ? OBJ_LAB.renta : OBJ_LAB.jours), R.other.plan, '');
     R.uni.forEach(function (u) { push(u.label, u.plan, u.why); });
     return table(['Stratégie', 'Durée', 'Captures (ton temps)', 'Optimakinas', 'Kamas dépensés', 'Kamas gagnés / jour', ''], rows, ['l', '', '', '', '', '', 'l']);
   }
@@ -494,14 +510,14 @@
     var optiN = Object.keys(pl.optiCount).reduce(function (a, g) { return a + pl.optiCount[g]; }, 0);
     var lead = { jours: 'te fait arriver <b>le plus vite</b> (jours d’élevage + ton temps de capture)',
                  renta: 'te rapporte <b>le plus de kamas par jour</b> (neurones et génétons, moins ce que tu dépenses)',
-                 kamas: 'te coûte <b>le moins de kamas</b>' }[S.objective] || '';
-    var out = h('h2', null, 'Objectif : ta première ' + esc(S.target) + ' (gén. 10)');
+                 kamas: 'te coûte <b>le moins de kamas</b>' }[OBJ()] || '';
+    var out = h('h2', null, 'Objectif : ' + (S.planCount > 1 ? f(S.planCount) + ' × ' : 'ta première ') + esc(PT()) + ' (gén. ' + E.TREE[PT()].gen + ')');
     out += '<p class="lead">La stratégie ci-dessous est celle qui ' + lead + ' avec tes réglages. Pour chaque génération, la page cherche le niveau des parents (1 à 200), ' +
       's’il faut une Optimakina, et <b>combien de tours</b> faire en recroisant les bébés ratés et les clones.</p>';
     out += '<div class="cards">' +
       card('Durée estimée', days(pl.days), 'chemin ' + days(pl.critH / 24) + ' · places ' + days(pl.capDays) + ' (' + pl.places + ' places)') +
       card('Captures gén. 1', f(Math.ceil(pl.capWithMargin)), 'ton temps : ' + hours(capH(pl)) + ' à ' + f(capMin()) + ' min la capture') +
-      card('Optimakinas', f(Math.ceil(optiN)), optiN ? f(pl.optiK) + ' kamas · gén. ' + Object.keys(pl.optiCount).join(', ') : (S.allowOpti === false ? 'interdites (case en haut de page)' : 'aucune')) +
+      card('Optimakinas', f(Math.ceil(optiN)), optiN ? f(pl.optiK) + ' kamas · gén. ' + Object.keys(pl.optiCount).join(', ') : (planMode() === 'sans' ? 'aucune (ton plan est sans Makina)' : 'aucune')) +
       card('Kamas gagnés par jour', f(perDay(pl)), 'valeur ' + f(pl.value) + ' (neurones + génétons) − dépenses ' + f(pl.kamas)) +
       card('Génétons gagnés', f(pl.genetons), '≈ ' + f(pl.genetons * E.genetonValue(S)) + ' kamas') + '</div>';
     if (pl.n90) out += '<div class="box">Sûreté 90 % : <b>' + pl.n90 + ' essais</b> prévus pour la dernière étape.</div>';
@@ -509,9 +525,9 @@
     var limit = pl.capDays > pl.critH / 24 ? 'Ce qui te limite : <b>tes places d’enclos</b> (' + pl.places + ' places). Un enclos de plus raccourcit le plan.' :
       'Ce qui te limite : <b>le temps de chaque génération</b> (XP, fécondité et tours de recroisement), pas tes enclos.';
     out += '<div class="box ok verdict">' + limit + '</div>';
-    var top = pl.nodes.filter(function (n) { return n.name === S.target; })[0];
+    var top = pl.nodes.filter(function (n) { return n.name === PT(); })[0];
     if (top && S.reuse !== false) out += '<div class="box">Un <b>bébé raté garde ses deux parents dans son arbre</b> (la génétique compte les parents et les grands-parents). ' +
-      'Recroisé avec un parent neuf, il redonne la génération visée presque aussi souvent : ici <b>' + pct(top.pRe) + '</b> au lieu de ' + pct(top.p) + ' pour ' + esc(S.target) + '. ' +
+      'Recroisé avec un parent neuf, il redonne la génération visée presque aussi souvent : ici <b>' + pct(top.pRe) + '</b> au lieu de ' + pct(top.p) + ' pour ' + esc(PT()) + '. ' +
       'Tu n’as donc pas besoin d’une nouvelle ' + esc(E.TREE[top.A].gen >= E.TREE[top.B].gen ? top.A : top.B) + ' après un raté. Chaque <b>tour</b> de recroisement demande moins de parents neufs, mais une préparation de plus (le bébé et le clone repartent du niveau 1).</div>';
 
     out += h('h3', null, 'Ta stratégie, génération par génération');
@@ -535,7 +551,7 @@
     out += '<div class="grid2"><div>' + table(['Capture (gén. 1, filet universel)', 'En moyenne', 'À prévoir'], caps) +
       '<p class="note">Le sexe est tiré au hasard : la marge sert à avoir des couples mâle + femelle (une Animakina choisit le sexe depuis la 3.7).</p></div><div>' +
       (optRows.length ? table(['Makina', 'En moyenne', 'À prévoir', 'Ton prix (vide = craft)'], optRows) : '<div class="box">Aucune Optimakina dans cette stratégie.</div>') + '</div></div>';
-    var mid = pl.nodes.filter(function (n) { return n.name !== S.target; }).map(function (n) { return [esc(n.name), n.gen, f(n.need, 2), f(Math.max(1, Math.ceil(n.need)))]; });
+    var mid = pl.nodes.filter(function (n) { return n.name !== PT(); }).map(function (n) { return [esc(n.name), n.gen, f(n.need, 2), f(Math.max(1, Math.ceil(n.need)))]; });
     out += '<details><summary class="mini">Les montures intermédiaires à réussir (' + mid.length + ' couleurs)</summary>' + table(['Couleur', 'Gén.', 'En moyenne', 'Au moins'], mid) + '</details>';
     out += fuelBox(R, pl);
 
@@ -552,7 +568,7 @@
   function tabCalcul() {
     var s = compute().s, C = S.calc;
     var all = E.NAMES.filter(function (n) { return E.TREE[n].gen > 1; });
-    if (all.indexOf(C.target) < 0) C.target = S.target;
+    if (all.indexOf(C.target) < 0) C.target = PT();
     var gens = E.gensOf(C.target), adv = C.mode === 'avance';
     var R = E.cascade(C.target, s, { mult: C.mult, def: { L: C.L, opti: C.opti, k: C.k }, perGen: adv ? C.perGen : null });
     var out = h('h2', null, 'Calculateur : ce qu’il te faut pour une dragodinde précise');
@@ -617,13 +633,13 @@
   }
   function tabChemin() {
     var R = compute(), pl = R.pl;
-    var out = h('h2', null, 'Le chemin vers ' + esc(S.target));
+    var out = h('h2', null, 'Le chemin vers ' + esc(PT()));
     out += '<p class="lead">Chaque ligne est un croisement à faire, de la génération 2 à la 10. ' +
       '<b>Attention aux générations 7 et 9 :</b> une couleur pure ne sort que d’un seul couple précis. Ivoire = Orchidée et Pourpre × Indigo et Pourpre ; Turquoise = Orchidée et Pourpre × Ébène et Orchidée ; ' +
       'Émeraude = Ivoire et Turquoise × Ivoire et Pourpre ; Prune = Ivoire et Turquoise × Turquoise et Orchidée.</p>';
     var rows = pl.nodes.map(function (n) {
       var imposed = [3, 5, 7, 9].indexOf(n.gen) >= 0;
-      return { cls: n.name === S.target ? 'sel' : '', cells: [ '<b>' + esc(n.name) + '</b>' + (imposed ? ' <span class="pill o">couleur pure</span>' : ''), n.gen, esc(n.A) + ' × ' + esc(n.B),
+      return { cls: n.name === PT() ? 'sel' : '', cells: [ '<b>' + esc(n.name) + '</b>' + (imposed ? ' <span class="pill o">couleur pure</span>' : ''), n.gen, esc(n.A) + ' × ' + esc(n.B),
         'niv. ' + n.L, n.opti ? '<span class="pill g">oui</span>' : 'non', pct(n.p), pct(n.pRe), n.k, f(n.att, 2), f(n.need, 2), f(n.fresh, 2), hours(Math.max(n.prepA, n.prepB)) ] };
     });
     out += table(['Bébé', 'Gén.', 'Parents', 'Niveau', 'Optimakina', 'Chance', 'Raté recroisé', 'Tours', 'Essais', 'Réussites', 'Parents neufs', 'Préparation'], rows, ['l', '', 'l']);
@@ -631,7 +647,7 @@
       '« Tours » : combien de fois les ratés et les clones repassent à l’accouplement (1 = tout en parallèle avec des parents neufs). « Parents neufs » : ce que l’étape d’avant doit fournir. ' +
       '« Préparation » : XP + fécondité du parent le plus long à préparer.</p>';
     out += h('h3', null, 'L’arbre complet');
-    out += '<div class="tree">' + esc(treeText(S.target, '', true, {})) + '</div>';
+    out += '<div class="tree">' + esc(treeText(PT(), '', true, {})) + '</div>';
     return out;
   }
 
@@ -668,7 +684,7 @@
   function tabNiveau() {
     var R = compute(), pl = R.pl, s = R.s;
     var names = pl.nodes.map(function (n) { return n.name; }).reverse();
-    if (!S.stepX || names.indexOf(S.stepX) < 0) S.stepX = S.target;
+    if (!S.stepX || names.indexOf(S.stepX) < 0) S.stepX = PT();
     var node = pl.nodes.filter(function (n) { return n.name === S.stepX; })[0], k = node ? node.k : 1;
     var vals = E.unitCosts(pl, s);
     var la = E.levelAnalysis(S.stepX, s, vals, E.LEVELS, k);
@@ -718,7 +734,7 @@
   function tabFinal() {
     var R0 = compute(), s = R0.s, L = S.finalL, o = !!S.finalOpti, vals = E.unitCosts(R0.pl, s);
     var list = GEN10.map(function (X) { return E.finalCross(X, L, o, s); }).sort(function (a, b) { return b.genPer9 - a.genPer9 || b.p - a.p; });
-    if (!S.finalX || GEN10.indexOf(S.finalX) < 0) S.finalX = S.target;
+    if (!S.finalX || GEN10.indexOf(S.finalX) < 0) S.finalX = GEN10.indexOf(PT()) >= 0 ? PT() : PT();
     var pr = E.finalCross('Prune et Rousse', L, o, s), pe = E.finalCross('Prune et Émeraude', L, o, s);
     var oc = E.optiCost(10, s);
     var out = h('h2', null, 'Le dernier croisement : gén. 9 × gén. 1, ou Prune × Émeraude ?');
@@ -753,9 +769,9 @@
   var RCACHE = { key: null };
   function tabRenta() {
     var R = compute(), s = R.s, k = JSON.stringify(S);
-    if (RCACHE.key !== k) RCACHE = { key: k, val: E.profitability(S.target, s, S.objective) };
+    if (RCACHE.key !== k) RCACHE = { key: k, val: E.profitability(PT(), s, OBJ()) };
     var P = RCACHE.val, cur = P.rows.filter(function (r) { return r.xpFam === S.xpFam && r.fertFam === S.fertFam; })[0];
-    var out = h('h2', null, 'Rentabilité dans le temps : quel carburant pour ' + esc(S.target) + ' ?');
+    var out = h('h2', null, 'Rentabilité dans le temps : quel carburant pour ' + esc(PT()) + ' ?');
     out += '<p class="lead">Chaque ligne refait tout le calcul (meilleur niveau et Optimakina à chaque génération) avec un autre carburant pour l’<b>XP</b> et pour l’<b>Amour, l’Endurance et la Maturité</b> (les trois jauges qui rendent féconde). ' +
       'On compare ce que ça <b>coûte</b> (carburants, XP, Makinas, filets), ce que ça <b>rapporte</b> (le bébé gén. 10 extrait : 10 neurones, plus tous les génétons gagnés) et le <b>temps</b> qu’il faut.</p>';
     var vb = cur && !cur.missing ? E.resultValue(cur.plan, s) : null;
@@ -799,8 +815,8 @@
      se pose dans chaque enclos. Le coût affiché vient de tes prix (0 par défaut) ; le repère au prix HDV refait le même plan avec fuelRef. */
   function fuelCosts(R, pl) {
     var nE = Math.max(1, +S.enclos || 1), tot = pl.fuelK + pl.levK, dep = E.depositTotal(R.s);
-    var sr = clone(R.s); sr.fuel = clone(S.fuelRef || DD_DEFAULTS.fuelRef); sr.topNeed = pl.need[S.target];
-    var pr = E.plan(S.target, R.main.policy, sr);
+    var sr = clone(R.s); sr.fuel = clone(S.fuelRef || DD_DEFAULTS.fuelRef); sr.topNeed = pl.need[PT()];
+    var pr = E.plan(PT(), R.main.policy, sr);
     return { nE: nE, tot: tot, perEnclos: tot / nE, dep: dep, depPerEnclos: dep === null ? null : dep / nE,
              refTot: pr.fuelK + pr.levK, refDep: E.depositTotal(sr) };
   }
@@ -1120,12 +1136,13 @@
     var tb = e.target.closest('[data-tab]');
     if (tb) { TAB = tb.getAttribute('data-tab'); history.replaceState(null, '', '#' + TAB); render(); window.scrollTo(0, 0); return; }
     var fu = e.target.closest('[data-fuel]');
-    if (fu) { var pp = fu.getAttribute('data-fuel').split('|'); S.xpFam = pp[0]; S.fertFam = pp[1]; S.xpFill = null; S.fertFill = null; save(); render(); return; }
+    if (fu) { var pp = fu.getAttribute('data-fuel').split('|'); S.xpFam = pp[0]; S.fertFam = pp[1]; S.xpFill = null; S.fertFill = null;
+      S.barMax = Math.max(+S.barMax || 80000, [80000, 140000, 180000, 200000][Math.max(E.FAMILIES.indexOf(pp[0]), E.FAMILIES.indexOf(pp[1]))]); save(); render(); return; }
     var fr = e.target.closest('[data-final]');
     if (fr) { S.finalX = fr.getAttribute('data-final'); save(); render(); return; }
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'plan'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (porteurs : les ratés remplacent une couleur demandée plus tard ; élevage de N dragodindes ; le plafond remplit les barres)';
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (tout se règle dans « Mon plan » ; les autres calculs le suivent ; élevage en continu selon la taille)';
   render();
 })();

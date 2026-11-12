@@ -36,7 +36,7 @@ try {
   const tblAfter = t => ev(`(() => { const h = [...document.querySelectorAll('main h3')].find(x => x.textContent.startsWith(${JSON.stringify(t)})); let n = h && h.nextElementSibling; while (n && !n.querySelector('table') && !n.matches('.tablewrap')) n = n.nextElementSibling; return n ? [...n.querySelectorAll('tbody tr')].map(r => [...r.children].map(c => c.textContent.trim()).join(' ¦ ')) : []; })()`);
   // 00. une seule page : aucun onglet, réglages dans la page, 7 tableaux numérotés
   const pv = await ev(`document.querySelectorAll('#tabs [data-tab]').length + '|' + document.getElementById('global').children.length + '|' + document.querySelectorAll('[data-k="planTarget"] option').length + '|' + [...document.querySelectorAll('main h3')].map(x => x.textContent.slice(0, 2)).filter(x => /^[0-9][.]/.test(x)).join('')`);
-  check('une page : aucun onglet, rien en haut, 63 dragodindes au choix, tableaux 1 à 7', pv === '0|0|63|1.2.3.4.5.6.7.', pv);
+  check('une page : aucun onglet, rien en haut, 63 dragodindes au choix, tableaux 1 à 8', pv === '0|0|63|1.2.3.4.5.6.7.8.', pv);
   const sols = await tblAfter('1.');
   check('stratégie par défaut : « le plus rentable en temps » (coût des Makinas compté), 7 lignes', sols.length === 8 && sols[3].includes('sans les porteurs') && sols[0].includes('Le plus rentable en temps') && sols[0].includes('ton plan'), sols.slice(0, 2));
   const ord = await tblAfter('2.');
@@ -53,6 +53,9 @@ try {
   await selP('planCount', 100);
   const h100 = await ev(`document.querySelector('main h2').textContent`), o100 = await tblAfter('2.');
   check('« combien j’en veux » = 100 : titre « 100 × », 100 Prune et Rousse à faire', h100.includes('100 ×') && (o100[o100.length - 1] || '').split(' ¦ ')[3] === '100', [h100, (o100[o100.length - 1] || '').slice(0, 60)]);
+  const z100 = await tblAfter('8.');
+  const zd = i => numP(z100[i].split(' ¦ ')[5]), zw = i => numP(z100[i].split(' ¦ ')[3]);
+  check('tableau 8 (100 visées) : 6 tailles, débit qui monte avec les enclos, 100 plus vite avec 6 enclos', z100.length === 6 && zw(5) > zw(1) && zw(1) > zw(0) && zd(5) < zd(1) && z100[1].includes('ton plan'), [z100[1], z100[5]]);
   await selP('planCount', 1);
   // plafond relevé à 140 000 : les deux barres le suivent, l'XP va plus vite partout
   const xp100 = async () => (await tblAfter('4.')).find(r => r.startsWith('100')).split(' ¦ ')[1];
@@ -111,29 +114,33 @@ try {
   await ev(`document.querySelector('tr[data-mode="jours"]').click()`); await sleep(3500);
   await ev(`document.querySelector('[data-expert="1"]').click()`); await sleep(1200);
   const nt = await ev(`document.querySelectorAll('#tabs [data-tab]').length + '|' + !!document.querySelector('#global [data-k="xpFam"]')`);
-  check('« Tous les détails » : les 10 onglets et les réglages des barres', nt === '10|true', nt);
+  check('« Autres calculs » : 9 onglets, aucune barre en haut', nt === '9|false', nt);
   await ev(`location.hash = '#objectif'`); await sleep(2500);
   const card = () => ev(`[...document.querySelectorAll('.card')].map(c => c.querySelector('.k').textContent + '=' + c.querySelector('.v').textContent)`);
   const before = await card();
   check('page chargée, 5 cartes', before.length === 5, before);
   const setSel = (k, v) => ev(`(() => { const e = document.querySelector('[data-k="${k}"]'); e.value = ${JSON.stringify(String(v))}; e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
   // 0. en-tête : 6 enclos au plus, aucun « carburant fécondité »
-  const hdr = await ev(`document.querySelectorAll('[data-k="enclos"] option').length + '|' + document.getElementById('global').textContent`);
-  check('en-tête : 6 enclos au plus, barres Amour · Endurance · Maturité en tiers (pas de « carburant fécondité »)', hdr.startsWith('6|') && hdr.includes('Barres Amour · Endurance · Maturité') && hdr.includes('T2 · jusqu’à 140 000') && !/carburant f[ée]condit[ée]/i.test(hdr), hdr.slice(0, 120));
+  let hdr = await ev(`document.getElementById('global').children.length + '|' + !!document.querySelector('[data-k="objective"], [data-k="target"], #global select') + '|' + (document.querySelector('.planline') || {}).textContent || ''`);
+  check('autres calculs : rien en haut, une ligne « selon ton plan » (cible, stratégie, enclos, barres)', hdr.startsWith('0|false|') && (hdr = hdr.replace(/[  ]/g, ' ')).includes('Selon ton plan') && hdr.includes('Prune et Rousse') && hdr.includes('Le plus rapide') && hdr.includes('2 enclos') && hdr.includes('XP 80 000'), hdr.slice(0, 160));
+  // la stratégie se change dans le plan, les autres calculs suivent
+  const viaPlan = async (js) => { await ev(`document.querySelector('[data-expert="0"]').click()`); await sleep(3500); await ev(js); await sleep(4000); await ev(`document.querySelector('[data-expert="1"]').click()`); await sleep(3000); };
+  const planMode = m => viaPlan(`document.querySelector('tr[data-mode="${m}"]').click()`);
+  const planSet = (k, v) => viaPlan(`(() => { const e = document.querySelector('main [data-k="${k}"]'); e.value = '${v}'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   // 1. objectif « dépenser le moins » : la durée doit s'allonger et les Optimakinas disparaître
-  await setSel('objective', 'kamas'); await sleep(1500);
+  await planMode('sans');
   const cheap = await card();
   const num = s => +s.replace(/[^\d,\-−]/g, '').replace('−', '-').replace(',', '.');
   const val = (a, k) => num(a.find(x => x.startsWith(k)).split('=')[1]);
   const dur = a => val(a, 'Durée');
-  check('« dépenser le moins » : moins d’Optimakinas', val(cheap, 'Optimakinas') < val(before, 'Optimakinas'), [val(before, 'Optimakinas'), val(cheap, 'Optimakinas')]);
-  check('« dépenser le moins » : durée plus longue', dur(cheap) > dur(before), [dur(before), dur(cheap)]);
-  await setSel('objective', 'renta'); await sleep(1800);
+  check('plan « sans Makina » : l’onglet Gén. 10 suit, moins d’Optimakinas', val(cheap, 'Optimakinas') < val(before, 'Optimakinas'), [val(before, 'Optimakinas'), val(cheap, 'Optimakinas')]);
+  check('plan « sans Makina » : durée plus longue', dur(cheap) > dur(before), [dur(before), dur(cheap)]);
+  await planMode('renta');
   const renta = await card();
-  check('« gagner le plus par jour » : plus de kamas par jour qu’« aller le plus vite »', val(renta, 'Kamas gagnés par jour') >= val(before, 'Kamas gagnés par jour'), [val(before, 'Kamas gagnés par jour'), val(renta, 'Kamas gagnés par jour')]);
+  check('plan « le plus rentable » : plus de kamas par jour qu’« aller le plus vite »', val(renta, 'Kamas gagnés par jour') >= val(before, 'Kamas gagnés par jour'), [val(before, 'Kamas gagnés par jour'), val(renta, 'Kamas gagnés par jour')]);
   // 2. un enclos de plus ne doit jamais allonger le plan
-  await setSel('objective', 'jours'); await sleep(1200);
-  const d2 = dur(await card()); await setSel('enclos', 4); await sleep(1500); const d4 = dur(await card());
+  await planMode('jours');
+  const d2 = dur(await card()); await planSet('eleveur', 120); await planSet('enclos', 4); const d4 = dur(await card());
   check('4 enclos au lieu de 2 : pas plus long', d4 <= d2, [d2, d4]);
   // 3. prix de la Queue de Glourséleste : l'Optimakina gén. 10 suit (10 Pépites à 5 000 + Queue)
   await ev(`location.hash = '#prix'`); await sleep(1200);
@@ -146,8 +153,8 @@ try {
   check('extraction : Ambre 153 000 (Muldo), Corne 57 000 (Volkorne)', nsp(mk).includes('Ambre153000') && nsp(mk).includes('Corne57000'), mk);
   // 4. les réglages survivent à un rechargement (stockage local)
   await send('Page.reload'); await sleep(2500);
-  const kept = await ev(`document.querySelector('[data-k="glourPrice"]').value + '|' + document.querySelector('[data-k="enclos"]').value`);
-  check('réglages gardés après rechargement', kept === '20000|4', kept);
+  const kept = await ev(`document.querySelector('[data-k="glourPrice"]').value + '|' + /4 enclos/.test((document.querySelector('.planline') || {}).textContent || '')`);
+  check('réglages gardés après rechargement', kept === '20000|true', kept);
   // 5. onglet dernier croisement : clic sur une ligne
   await ev(`location.hash = '#final'`); await sleep(1500);
   await ev(`document.querySelector('[data-final="Prune et Émeraude"]').click()`); await sleep(1200);
@@ -178,8 +185,8 @@ try {
   const nrows = await ev(`document.querySelectorAll('[data-fuel]').length`);
   check('rentabilité : combinaisons de carburants chiffrées', nrows >= 9, nrows);
   await ev(`document.querySelector('[data-fuel="Potion|Extrait"]').click()`); await sleep(3500);
-  const fam = await ev(`document.querySelector('[data-k="xpFam"]').value + '|' + document.querySelector('[data-k="fertFam"]').value`);
-  check('clic sur Potion / Extrait : réglage adopté', fam === 'Potion|Extrait', fam);
+  const fam = await ev(`(document.querySelector('.planline') || {}).textContent || ''`);
+  check('clic sur Potion / Extrait : adopté par le plan (XP 180 000, Amour · Endurance · Maturité 80 000)', fam.replace(/[  ]/g, ' ').includes('XP 180 000') && fam.replace(/[  ]/g, ' ').includes('Maturité 80 000'), fam.slice(0, 200));
   // 6 ter. « Mes prix » : présent sur chaque onglet, une saisie recalcule l'onglet en cours
   await ev(`location.hash = '#objectif'`); await sleep(1500);
   const panel = await ev(`!!document.querySelector('#mes-prix') && document.querySelectorAll('#mes-prix input').length`);
@@ -213,13 +220,13 @@ try {
   await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 5, expert: true, enclos: 12, parentsOnly: true, cloneKeepsLevel: true, neurone: 36000 }))`);
   await send('Page.reload'); await sleep(2500);
   await ev(`location.hash = '#prix'`); await sleep(1500);
-  const v6 = await ev(`document.querySelector('[data-k="enclos"]').value + '|' + !!document.querySelector('[data-k="parentsOnly"]') + '|' + !!document.querySelector('[data-k="cloneKeepsLevel"]') + '|' + !!document.querySelector('[data-k="reuse"]') + '|' + document.querySelector('#mes-prix [data-k="neurone"]').value`);
+  const v6 = await ev(`(((document.querySelector('.planline') || {}).textContent || '').match(/([0-9]) enclos/) || [])[1] + '|' + !!document.querySelector('[data-k="parentsOnly"]') + '|' + !!document.querySelector('[data-k="cloneKeepsLevel"]') + '|' + !!document.querySelector('[data-k="reuse"]') + '|' + document.querySelector('#mes-prix [data-k="neurone"]').value`);
   check('version 5 → 6 : 6 enclos au plus, options « parents seuls » et « clone garde son niveau » retirées, saisie gardée', v6 === '6|false|false|true|36000', v6);
   // 8. mise à niveau des réglages d'une ancienne version (3) : anciens prix par défaut remplacés, saisies gardées
   await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 3, expert: true, enclos: 3, runePrices: { 'Rune Vi': 135, 'Rune Ra Vi': 1317, 'Rune Pui': 999, 'Rune Ine': null }, brisage: { runePrice: 20000 } }))`);
   await send('Page.reload'); await sleep(2500);
   await ev(`location.hash = '#brisage'`); await sleep(1500);
-  const mig = await ev(`['Rune Vi', 'Rune Ra Vi', 'Rune Pui', 'Rune Ine'].map(k => document.querySelector('#mes-prix [data-k="runePrices.' + k + '"]').value).join(',') + '|' + document.querySelector('[data-k="enclos"]').value`);
+  const mig = await ev(`['Rune Vi', 'Rune Ra Vi', 'Rune Pui', 'Rune Ine'].map(k => document.querySelector('#mes-prix [data-k="runePrices.' + k + '"]').value).join(',') + '|' + (((document.querySelector('.planline') || {}).textContent || '').match(/([0-9]) enclos/) || [])[1]`);
   check('version 3 → 4 : prix vidéo à la place des anciens défauts, saisie 999 et 3 enclos gardés', mig === '95,1044,999,51|3', mig);
   // 9. parchemins : valeur du généton calculée, ancien 100 par défaut retiré, prix modifiable depuis « Mes prix »
   await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 4, expert: true, genetonValue: 100, neurone: 23000 }))`);

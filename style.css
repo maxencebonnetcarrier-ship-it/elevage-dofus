@@ -146,3 +146,4 @@ details.detail > summary { cursor: pointer; color: var(--gold2); font-weight: 60
 .gauge2 .glow { position: absolute; top: 0; bottom: 0; background: rgba(214,170,79,.35); pointer-events: none; }
 tr.alt td { color: var(--dim); }
 tr[data-mode]:hover td { background: #2a2416; }
+.planline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px; border-color: #6b5422; } .planline .btn { margin-left: auto; padding: 3px 10px; }
