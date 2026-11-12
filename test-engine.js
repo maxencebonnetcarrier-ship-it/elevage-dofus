@@ -279,5 +279,33 @@ t('plan : chaque étape a son calendrier (début après ses parents, fin avant l
   for (const x of pl.nodes) { assert.ok(x.startH >= 0 && x.doneH > x.startH, x.name); assert.ok(x.doneH <= top.doneH + 1e-9, x.name); }
   assert.ok(Math.abs(top.doneH - pl.critH) < 1e-9);
 });
+t('porteurs : les ratés d’Ébène et d’Indigo remplacent des Dorée et Rousse / Amande et Rousse en gén. 5 ; moins de captures, pas plus long', () => {
+  const pol = E.uniformPolicy('Prune et Rousse', 60, false, 3);
+  const a = E.plan('Prune et Rousse', pol, Object.assign({}, S, { porteurs: true })), b = E.plan('Prune et Rousse', pol, Object.assign({}, S, { porteurs: false }));
+  const orch = a.nodes.find(x => x.name === 'Orchidée'), pour = a.nodes.find(x => x.name === 'Pourpre');
+  assert.ok(orch.porteurs.some(q => q.color === 'Dorée et Rousse' && q.from === 'Ébène'), JSON.stringify(orch.porteurs));
+  assert.ok(pour.porteurs.some(q => q.color === 'Amande et Rousse' && q.from === 'Indigo'));
+  assert.ok(a.carried > 5 && a.capTot < b.capTot - 10 && a.days <= b.days + 1e-9, [a.carried, a.capTot, b.capTot, a.days, b.days].join(' '));
+  // un porteur n'arrive qu'à la fin de l'étape qui l'a donné : l'Orchidée ne démarre pas avant la fin des Ébène
+  assert.ok(orch.startH >= a.nodes.find(x => x.name === 'Ébène').doneH - 1e-9);
+});
+t('porteurs : jamais là où la cible se partage avec une autre couleur (ratés d’Ébène × Indigo pour Ébène et Orchidée : 24 % au lieu de 48 %)', () => {
+  const pc = E.carrierP('Ébène', 'Indigo', 60, false, 'Ébène', 'Ébène et Orchidée', 60, false, S), pt = E.recovery('Ébène', 'Orchidée', 60, 60, false, S).p;
+  near(pc, 0.24, 0.005); near(pt, 0.48, 1e-9);
+  const a = E.plan('Prune et Rousse', E.uniformPolicy('Prune et Rousse', 60, false, 3), Object.assign({}, S, { porteurs: true }));
+  assert.strictEqual(a.nodes.find(x => x.name === 'Ébène et Orchidée').porteurs.length, 0);
+});
+t('nombre visé : 100 Prune et Rousse demandent bien plus de captures et de jours qu’une seule', () => {
+  const pol = E.uniformPolicy('Prune et Rousse', 60, false, 3);
+  const one = E.plan('Prune et Rousse', pol, S), many = E.plan('Prune et Rousse', pol, Object.assign({}, S, { topNeed: 100 }));
+  near(many.nodes.find(x => x.name === 'Prune et Rousse').need, 100, 1e-9);
+  assert.ok(many.capTot > 30 * one.capTot && many.days > 10 * one.days);
+});
+t('rentabilité par tier : chaque ligne a son propre tier, même si la barre a été remplie au clic', () => {
+  const s = Object.assign({}, S, { xpFill: 120000, fertFill: 120000 });
+  const P = E.profitability('Prune et Rousse', s, 'jours'), d = {};
+  P.rows.filter(r => !r.missing && r.fertFam === 'Extrait').forEach(r => { d[r.xpFam] = r.days; });
+  assert.ok(d['Extrait'] > d['Philtre'], JSON.stringify(d));
+});
 console.log(`\n${n - fails}/${n} tests verts`);
 process.exit(fails ? 1 : 0);

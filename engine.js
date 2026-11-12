@@ -261,21 +261,63 @@
       prepA: prepHours(startLevel(A, s), pol.L, s), prepB: prepHours(startLevel(B, s), pol.L, s), prep1: prepHours(1, pol.L, s),
       fs: failStats(A, B, pol.L, pol.opti, s) });
   }
+  /* PORTEURS (règle des grands-parents) : une monture qui reste à la fin d'une étape A × B (bébé raté, clone, parent pas
+     accouplé) porte A et B dans son arbre. Plus tard, là où il faut un A (ou un B) comme parent, elle peut le remplacer : la
+     génération visée se calcule avec les parents ET les grands-parents. On ne la prend que si la chance d'avoir la bonne couleur
+     reste au moins 95 % de la chance normale (sinon la cible se partage avec une autre couleur de même génération). */
+  var CARRY_CACHE = {};
+  function carrierP(SA, SB, SL, Sopti, C, T, LT, optiT, s) {
+    var ck = [SA, SB, SL, Sopti ? 1 : 0, C, T, LT, optiT ? 1 : 0, s.optiBonus, s.alma].join('~');
+    if (CARRY_CACHE[ck] !== undefined) return CARRY_CACHE[ck];
+    var fs = failStats(SA, SB, SL, Sopti, s), other = TREE[T].p[0] === C ? TREE[T].p[1] : TREE[T].p[0];
+    var f = fs.fails.reduce(function (a, i) { return a + i.p; }, 0), acc = 0, w = 0;
+    fs.fails.forEach(function (i) {
+      var q = f > 0 ? i.p / f : 0; if (q < 1e-4) return;
+      var oc = outcomesInd({ c: i.name, p: [SA, SB] }, canon(other), LT, LT, optiT, s), px = 0;
+      oc.items.forEach(function (j) { if (j.name === T) px = j.p; });
+      acc += q * px; w += q;
+    });
+    return (CARRY_CACHE[ck] = w ? acc / w : 0);
+  }
+  // montures qui restent à la fin d'une étape (elles portent ses deux parents)
+  function leftoverOf(fA, fB, att, p, k, A, B, s) {
+    var pp = poolParams(p, s), lo = 0;
+    if (s.reuse === false) lo += att * (1 - p);                                   // ratés jamais recroisés
+    if (s.reuse !== false && TREE[A].gen !== TREE[B].gen && pp.d > 0) lo += (TREE[A].gen > TREE[B].gen ? fA : fB) * Math.pow(1 - p, k);   // chaînes encore ratées
+    else if (pp.d > 0) lo += (fA + fB) * Math.pow(pp.d, k);                       // réserve restante après k tours
+    return lo;
+  }
   function plan(target, policy, s) {
     var need = {}; need[target] = s.topNeed || 1;
-    var uses = {};
+    var usesBy = {};   // couleur → [{ gen, amt, T, L, opti, node }] : où elle sert de parent
     var order = NAMES.slice().sort(function (a, b) { return TREE[b].gen - TREE[a].gen || a.localeCompare(b); });
-    var nodes = [];
+    var nodes = [], byName = {}, carried = 0;
     var kamas = 0, fuelK = 0, levK = 0, optiK = 0, placeH = 0, genetons = 0, optiCount = {}, missing = [];
     var fc = fertCost(s);
     if (fc === null) missing.push('prix des carburants Amour, Endurance, Maturité et Sérénité (' + s.fertFam + ')');
+    function sumUses(C) { return (usesBy[C] || []).reduce(function (a, u) { return a + u.amt; }, 0); }
     order.forEach(function (X) {
-      if (X !== target) need[X] = uses[X] || 0;
-      if (!need[X] || TREE[X].gen === 1) return;
+      if (X !== target) need[X] = sumUses(X);
+      if (!(need[X] > 1e-9) || TREE[X].gen === 1) return;
       var g = TREE[X].gen, pol = policy[g] || { L: 1, opti: false, k: 1 };
       var ns = nodeStatic(X, pol, s), A = ns.A, B = ns.B, p = ns.p, att = need[X] / p, k = ns.k;
       var fA = Math.max(1, need[X] * ns.shareA), fB = Math.max(1, need[X] * ns.shareB);
-      uses[A] = (uses[A] || 0) + fA; uses[B] = (uses[B] || 0) + fB;
+      var node = { name: X, gen: g, A: A, B: B, L: pol.L, opti: !!pol.opti, k: k, p: p, pRe: ns.fs.pRe, rA: ns.rA, rB: ns.rB, need: need[X], att: att,
+                   fresh: fA + fB, consA: fA, consB: fB, porteurs: [] };
+      (usesBy[A] = usesBy[A] || []).push({ gen: g, amt: fA, T: X, L: pol.L, opti: !!pol.opti, node: node });
+      (usesBy[B] = usesBy[B] || []).push({ gen: g, amt: fB, T: X, L: pol.L, opti: !!pol.opti, node: node });
+      // ce qui reste de cette étape remplace des A et des B demandés plus tard (générations au-dessus)
+      if (s.porteurs !== false) {
+        var lo = leftoverOf(fA, fB, att, p, k, A, B, s);
+        [A, B].forEach(function (C) {
+          (usesBy[C] || []).forEach(function (u) {
+            if (lo <= 1e-9 || u.gen <= g || u.amt <= 1e-9) return;
+            if (carrierP(A, B, pol.L, pol.opti, C, u.T, u.L, u.opti, s) < 0.95 * u.node.p) return;
+            var take = Math.min(u.amt, lo); u.amt -= take; lo -= take; carried += take;
+            u.node.porteurs.push({ color: C, n: take, from: X });
+          });
+        });
+      }
       var lvA = ns.lvA, lvB = ns.lvB;
       if (lvA === null || lvB === null) { if (missing.indexOf('prix de l’XP (' + s.xpFam + ')') < 0) missing.push('prix de l’XP (' + s.xpFam + ')'); lvA = lvA || 0; lvB = lvB || 0; }
       var levelK = att * (lvA + lvB);
@@ -293,22 +335,27 @@
       var fs = ns.fs, G = GENETONS[TREE[A].gen] + GENETONS[TREE[B].gen];
       var first = Math.min(need[X], p * Math.min(fA, fB));
       genetons += first * G + (need[X] - first) * (s.reuse !== false ? G / 2 + fs.genF : G);
-      nodes.push({ name: X, gen: g, A: A, B: B, L: pol.L, opti: !!pol.opti, k: k, p: p, pRe: fs.pRe, rA: ns.rA, rB: ns.rB, need: need[X], att: att,
-                   fresh: fA + fB, consA: fA, consB: fB, levelK: levelK, fertK: fert, optiK: oc, hours: hours, prepA: prepA, prepB: prepB, prep1: prep1 });
+      node.levelK = levelK; node.fertK = fert; node.optiK = oc; node.hours = hours; node.prepA = prepA; node.prepB = prepB; node.prep1 = prep1;
+      nodes.push(node); byName[X] = node;
     });
     var caps = {}, capTot = 0;
-    GEN1.forEach(function (g) { if (need[g]) { caps[g] = need[g]; capTot += need[g]; } });
+    GEN1.forEach(function (g) { if (need[g] > 1e-9) { caps[g] = need[g]; capTot += need[g]; } });
     var filetK = capTot * (1 + s.capMargin) * (num(s.filet) || 0);
     kamas = fuelK + levK + optiK + filetK;
-    // chemin critique : chaque étape attend ses parents (fécondité + XP), puis ses tours de recroisement
-    var crit = {}, byName = {};
-    nodes.forEach(function (n) { byName[n.name] = n; });
+    // chemin critique : chaque étape attend ses parents (fécondité + XP), puis ses tours de recroisement ;
+    // un parent fourni par des porteurs attend aussi la fin de l'étape qui les a donnés
+    var crit = {};
+    function ready(nd, C) {
+      var t = cp(C);
+      if (nd) nd.porteurs.forEach(function (q) { if (q.color === C) t = Math.max(t, cp(q.from)); });
+      return t;
+    }
     function cp(m) {
       if (crit[m] !== undefined) return crit[m];
       if (TREE[m].gen === 1) return (crit[m] = 0);
       var nd = byName[m], A = TREE[m].p[0], B = TREE[m].p[1];
       var pa = nd ? nd.prepA : prepHours(startLevel(A, s), 1, s), pb = nd ? nd.prepB : prepHours(startLevel(B, s), 1, s);
-      return (crit[m] = Math.max(cp(A) + pa, cp(B) + pb) + (nd ? (nd.k - 1) * nd.prep1 : 0));
+      return (crit[m] = Math.max(ready(nd, A) + pa, ready(nd, B) + pb) + (nd ? (nd.k - 1) * nd.prep1 : 0));
     }
     var crit0 = {};
     function cp0(m) {   // sans les tours de recroisement : tout réussit du premier coup
@@ -320,12 +367,12 @@
     }
     var critH = cp(target), places = placesOf(s);
     var days = Math.max(critH, placeH / places) / 24;
-    // calendrier de chaque étape (heures depuis le début, chemin critique) : elle démarre quand ses deux parents sont nés
-    nodes.forEach(function (n) { n.startH = Math.max(cp(n.A), cp(n.B)); n.doneH = cp(n.name); });
+    // calendrier de chaque étape (heures depuis le début, chemin critique) : elle démarre quand ses deux parents sont prêts
+    nodes.forEach(function (n) { n.startH = Math.max(ready(n, n.A), ready(n, n.B)); n.doneH = cp(n.name); });
     nodes.sort(function (a, b) { return a.gen - b.gen || a.name.localeCompare(b.name); });
     return { target: target, nodes: nodes, need: need, credit: {}, captures: caps, capTot: capTot, capWithMargin: capTot * (1 + s.capMargin),
              kamas: kamas, fuelK: fuelK, levK: levK, optiK: optiK, filetK: filetK, placeH: placeH, critH: critH, seqH: 0, days: days,
-             capDays: placeH / places / 24, bestDays: cp0(target) / 24,
+             capDays: placeH / places / 24, bestDays: cp0(target) / 24, carried: carried,
              genetons: genetons, optiCount: optiCount, missing: missing, places: places, captureMin: s.captureMin,
              value: (num(s.neurone) || 0) * TREE[target].gen * (s.topNeed || 1) * (1 - (num(s.tax) || 0)) + genetons * genetonValueCached(s) };
   }
@@ -482,7 +529,7 @@
     var rows = [];
     FAMILIES.forEach(function (xf) {
       FAMILIES.forEach(function (ff) {
-        var t = JSON.parse(JSON.stringify(s)); t.xpFam = xf; t.fertFam = ff;
+        var t = JSON.parse(JSON.stringify(s)); t.xpFam = xf; t.fertFam = ff; t.xpFill = null; t.fertFill = null;
         var lc = refillCostPer1000(xf, t.refillH, t.fuel['Expérience']), fc = fertCost(t);
         if (lc === null || fc === null) { rows.push({ xpFam: xf, fertFam: ff, missing: true }); return; }
         var r = optimize(target, t, obj, { starts: 1, tours: [1, 2, 3], allowOpti: s.allowOpti !== false }), pl = r.plan, v = resultValue(pl, t);
@@ -658,6 +705,6 @@
               optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel, bestPerSimple: bestPerSimple,
               SCROLLS: SCROLLS, SCROLL_STATS: SCROLL_STATS, scrollName: scrollName, scrollValues: scrollValues, genetonValue: genetonValue,
               TOURS: TOURS, canon: canon, outcomesInd: outcomesInd, failStats: failStats, poolParams: poolParams, freshFor: freshFor, placesOf: placesOf,
-              cascade: cascade, freshSplit: freshSplit, bestBrisageTime: bestBrisageTime, saleDD: saleDD, instantBest: instantBest };
+              cascade: cascade, freshSplit: freshSplit, carrierP: carrierP, leftoverOf: leftoverOf, bestBrisageTime: bestBrisageTime, saleDD: saleDD, instantBest: instantBest };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);

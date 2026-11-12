@@ -38,11 +38,29 @@ try {
   const pv = await ev(`document.querySelectorAll('#tabs [data-tab]').length + '|' + document.getElementById('global').children.length + '|' + document.querySelectorAll('[data-k="planTarget"] option').length + '|' + [...document.querySelectorAll('main h3')].map(x => x.textContent.slice(0, 2)).filter(x => /^[0-9][.]/.test(x)).join('')`);
   check('une page : aucun onglet, rien en haut, 63 dragodindes au choix, tableaux 1 à 7', pv === '0|0|63|1.2.3.4.5.6.7.', pv);
   const sols = await tblAfter('1.');
-  check('stratégie par défaut : « le plus rentable en temps » (coût des Makinas compté), 7 lignes', sols.length === 7 && sols[0].includes('Le plus rentable en temps') && sols[0].includes('ton plan'), sols.slice(0, 2));
+  check('stratégie par défaut : « le plus rentable en temps » (coût des Makinas compté), 7 lignes', sols.length === 8 && sols[3].includes('sans les porteurs') && sols[0].includes('Le plus rentable en temps') && sols[0].includes('ton plan'), sols.slice(0, 2));
   const ord = await tblAfter('2.');
   const lastRow = ord[ord.length - 1] || '';
   check('dans l’ordre : 3 captures + 17 dragodindes, la dernière = Prune et Rousse (Prune × Rousse, niveau, chance)', ord.length === 20 && ord[0].includes('capture au filet') && lastRow.includes('Prune et Rousse') && lastRow.includes('Prune × ') && /niv\. \d+/.test(lastRow) && lastRow.includes('%'), [ord.length, lastRow]);
   check('dans l’ordre : chaque couleur dit quoi faire des stériles et ratés en trop', ord.slice(3, -1).every(r => /Extraire|Briser|Vendre/.test(r.split(' ¦ ').pop())), ord[5]);
+  const orc = ord.find(r => r.split(' ¦ ')[2] === 'Orchidée') || '';
+  check('porteurs : l’Orchidée prend des ratés d’Ébène à la place de Dorée et Rousse', /dont \d+ ratés d’Ébène/.test(orc), orc);
+  await ev(`document.querySelector('main [data-k="porteurs"]').click()`); await sleep(3500);
+  const ord0 = await tblAfter('2.'), sols1 = await tblAfter('1.');
+  check('porteurs décochés : plus aucun raté réutilisé, plus de captures', !ord0.some(r => r.includes('ratés d’')) && sols1.length === 7 && numP(sols1[0].split(' ¦ ')[3]) > numP(sols[0].split(' ¦ ')[3]), [sols[0].split(' ¦ ')[3], sols1[0].split(' ¦ ')[3]]);
+  await ev(`document.querySelector('main [data-k="porteurs"]').click()`); await sleep(3500);
+  // un élevage de 100
+  await selP('planCount', 100);
+  const h100 = await ev(`document.querySelector('main h2').textContent`), o100 = await tblAfter('2.');
+  check('« combien j’en veux » = 100 : titre « 100 × », 100 Prune et Rousse à faire', h100.includes('100 ×') && (o100[o100.length - 1] || '').split(' ¦ ')[3] === '100', [h100, (o100[o100.length - 1] || '').slice(0, 60)]);
+  await selP('planCount', 1);
+  // plafond relevé à 140 000 : les deux barres le suivent, l'XP va plus vite partout
+  const xp100 = async () => (await tblAfter('4.')).find(r => r.startsWith('100')).split(' ¦ ')[1];
+  const t80 = await xp100();
+  await selP('barMax', 140000);
+  const bars = await ev(`[...document.querySelectorAll('[data-fill]')].map(g => g.getAttribute('aria-valuenow')).join(',')`), t140 = await xp100();
+  check('plafond 140 000 : les deux barres montent à 140 000, temps d’XP jusqu’au niveau 100 plus court', bars === '140000,140000' && t140 !== t80, [bars, t80, t140]);
+  await selP('barMax', 80000);
   await ev(`document.querySelector('tr[data-mode="jours"]').click()`); await sleep(3500);
   const sJ = await tblAfter('1.'), oJ = await tblAfter('2.');
   check('clic sur « le plus rapide » : adopté, avec Makinas', sJ[1].includes('ton plan') && oJ.some(r => r.includes('+ Makina')), sJ[1]);
@@ -55,7 +73,8 @@ try {
   const barVal = k => ev(`document.querySelector('[data-fill="${k}"]').getAttribute('aria-valuenow')`);
   const pd80 = await perDay();
   await clickBar('xpFam', 0.6);
-  check('plafond 80 000 : un clic à 120 000 est ramené à 80 000', await barVal('xpFam') === '80000', await barVal('xpFam'));
+  check('plafond 80 000, clic à 120 000 : la barre y va et le plafond monte à 140 000', await barVal('xpFam') === '120000' && await ev(`document.querySelector('main [data-k="barMax"]').value`) === '140000', await barVal('xpFam'));
+  await selP('barMax', 80000);
   await clickBar('xpFam', 0.15);
   const pd30 = await perDay();
   check('barre XP à 30 000 : vide avant la connexion suivante, moins de montures niveau 100 par jour qu’à 80 000', await barVal('xpFam') === '30000' && pd30 < pd80, [pd80, pd30]);
