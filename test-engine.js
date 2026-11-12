@@ -122,7 +122,7 @@ t('brisage DD, ancien modèle (90 %, objet niveau 60, bonus selon le niveau) : P
   near(po.weight, (3 * 2 * 51 * 60 / 200 + 1) * 0.9, 1e-9); near(po.runes[0].n, po.weight / 51, 1e-9);
   near(vi.weight, (3 * 400 * 0.2 * 60 / 200 + 1) * 0.9, 1e-9);
   assert.deepStrictEqual(vi.runes.map(x => [x.rune, +x.n.toFixed(2)]), [['Rune Ra Vi', 6], ['Rune Pa Vi', 1], ['Rune Vi', 2.7]]);
-  near(r.kamas, (6 * 1317 + 442 + 2.7 * 135) * 0.97, 1e-6);
+  near(r.kamas, (6 * 1317 + 442 + 2.7 * 135) * (1 - S.tax), 1e-6);
 });
 t('brisage DD, modèle jeu (50 %, niveau de la monture, bonus max) : Prune niveau 200 → 3,01 Rune Po et 12 Ra Vi + 0,5 Vi', () => {
   const r = E.brisageDD('Prune', 200, S);
@@ -130,10 +130,10 @@ t('brisage DD, modèle jeu (50 %, niveau de la monture, bonus max) : Prune nivea
   near(po.weight, (3 * 2 * 51 * 200 / 200 + 1) * 0.5, 1e-9); near(po.runes[0].n, 153.5 / 51, 1e-9);
   near(vi.weight, (3 * 400 * 0.2 * 200 / 200 + 1) * 0.5, 1e-9);
   assert.deepStrictEqual(vi.runes.map(x => [x.rune, +x.n.toFixed(2)]), [['Rune Ra Vi', 12], ['Rune Vi', 0.5]]);
-  near(r.kamas, (12 * 1317 + 0.5 * 135) * 0.97, 1e-6);
-  near(r.extract, 9 * 23000 * 0.97, 1e-6);
+  near(r.kamas, (12 * 1317 + 0.5 * 135) * (1 - S.tax), 1e-6);
+  near(r.extract, 9 * 23000 * (1 - S.tax), 1e-6);
   assert.strictEqual(r.missing, true); assert.strictEqual(r.breakEven.rune, 'Rune Po');
-  near(r.breakEven.price, (r.extract + r.xp - r.kamas) / (po.baseCount * 0.97), 1e-6);
+  near(r.breakEven.price, (r.extract + r.xp - r.kamas) / (po.baseCount * (1 - S.tax)), 1e-6);
 });
 t('seuils : la fécondité prend le carburant le moins cher capable d’atteindre la tranche', () => {
   const fuel = JSON.parse(JSON.stringify(S.fuel)); fuel['Endurance'] = [10, 300, 200, 400];   // Potion moins chère que Philtre

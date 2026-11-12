@@ -2,7 +2,7 @@
    Ombre sinon Kourial, novembre 2026) — coût en kamas pour 1 000 points de jauge, recette la moins chère de chaque famille.
    null = aucun prix connu (un ingrédient sans relevé). Tout se modifie dans l'onglet « Prix et réglages ». */
 var DD_DEFAULTS = {
-  version: 2,
+  version: 3,
   target: 'Prune et Rousse',
   objective: 'jours',
   enclos: 2,
@@ -23,7 +23,7 @@ var DD_DEFAULTS = {
   filet: 310,
   neurone: 23000,
   genetonValue: 100,
-  tax: 0.03,
+  tax: 0.01,   // taxe de l’hôtel des ventes : 1 % (constaté en jeu)
   queuePrice: 0,
   glourPrice: null,
   optiBuy: {},
@@ -61,7 +61,7 @@ var DD_DEFAULTS = {
     itemLevel: 60,
     divisor: 100,
     runePrice: 20000,
-    tax: 0.03,
+    tax: 0.01,
     filet: 310,
     pricePerXp: 0.0125,
     perEnclos: 10,

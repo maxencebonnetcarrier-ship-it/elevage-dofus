@@ -14,6 +14,8 @@
       var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
       // version 1 → 2 : les prix saisis sont gardés ; seul le réglage de brisage des dragodindes (ancien taux de 90 %) repart des valeurs par défaut
       if (saved && saved.version === 1) { delete saved.ddBrise; delete saved.capMargin; saved.version = 2; }
+      // version 2 → 3 : taxe HDV 1 % (au lieu de 3 %) si l'ancienne valeur par défaut n'avait pas été changée
+      if (saved && saved.version === 2) { if (saved.tax === 0.03) delete saved.tax; if (saved.brisage && saved.brisage.tax === 0.03) delete saved.brisage.tax; saved.version = 3; }
       if (saved && saved.version === d.version) {
         Object.keys(saved).forEach(function (k) {
           if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'ddBrise') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
