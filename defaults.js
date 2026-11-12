@@ -2,7 +2,7 @@
    Ombre sinon Kourial, novembre 2026) — coût en kamas pour 1 000 points de jauge, recette la moins chère de chaque famille.
    null = aucun prix connu (un ingrédient sans relevé). Tout se modifie dans l'onglet « Prix et réglages ». */
 var DD_DEFAULTS = {
-  version: 1,
+  version: 2,
   target: 'Prune et Rousse',
   objective: 'jours',
   enclos: 2,
@@ -12,12 +12,13 @@ var DD_DEFAULTS = {
   fertFam: 'Extrait',
   capLevel: 1,
   clone: true,
+  parentsOnly: false,   // génétique : false = parents + grands-parents (guides 2026), true = parents seuls (hypothèse à tester)
   recup: true,
   cloneKeepsLevel: false,
   optiBonus: 20,
   alma: 0,
   safety: 'moyenne',
-  capMargin: 0.25,
+  capMargin: 0,   // capture sûre à 100 % (gén. 1) : aucune marge par défaut
   seren: 6000,
   filet: 310,
   neurone: 23000,
@@ -51,8 +52,9 @@ var DD_DEFAULTS = {
     'Rune Age': null, 'Rune Pa Age': null, 'Rune Ra Age': null, 'Rune Pui': null, 'Rune Pa Pui': null, 'Rune Ra Pui': null,
     'Rune Prospe': null, 'Rune Pa Prospe': null, 'Rune So': null, 'Rune Invo': null, 'Rune Cri': null, 'Rune Po': null
   },
-  // brisage des dragodindes : niveau, niveau d'objet, coefficient (90 % recale la formule sur les 0,82 rune Ga PM de la vidéo), part du bonus au niveau 100
-  ddBrise: { L: 100, itemLevel: 60, coef: 90, curve100: 0.75 },
+  // brisage des dragodindes : taux fixe de 50 % pour les montures, niveau de l'objet = niveau de la monture, bonus à leur maximum
+  // (mountLevel: false → niveau d'objet fixe itemLevel ; jetMax: false → bonus selon le niveau, curve100 atteint au niveau 100)
+  ddBrise: { L: 100, coef: 50, mountLevel: true, jetMax: true, itemLevel: 60, curve100: 0.75 },
   brisage: {
     rune: 'PM',
     weight: 90,
@@ -65,7 +67,12 @@ var DD_DEFAULTS = {
     perEnclos: 10,
     capLevel: 1,
     xpPerHour: 3600,
-    captureMin: 5
+    captureMin: 5,
+    // modèle « jeu » : taux fixe de 50 % pour les montures, niveau de l'objet = niveau de la monture, bonus de 1 PM / 1 PA
+    model: 'jeu',
+    coef: 50,
+    stat: 1,
+    capturesPerDay: 40
   }
 };
 if (typeof module !== 'undefined') module.exports = DD_DEFAULTS;

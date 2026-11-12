@@ -12,6 +12,8 @@
     var d = clone(DD_DEFAULTS);
     try {
       var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+      // version 1 → 2 : les prix saisis sont gardés ; seul le réglage de brisage des dragodindes (ancien taux de 90 %) repart des valeurs par défaut
+      if (saved && saved.version === 1) { delete saved.ddBrise; delete saved.capMargin; saved.version = 2; }
       if (saved && saved.version === d.version) {
         Object.keys(saved).forEach(function (k) {
           if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'ddBrise') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
@@ -120,11 +122,34 @@
     var cur = document.querySelector('.tabs [aria-selected=true]');
     if (cur && cur.scrollIntoView && window.innerWidth < 700) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
   }
+  // ------------------------------------------------------------ « Mes prix » : tous les prix, modifiables depuis chaque onglet
+  function numInput(path, v, ph) {
+    return '<input type="number" step="any" data-k="' + esc(path) + '" data-num="1" value="' + (v === null || v === undefined ? '' : esc(v)) + '" placeholder="' + esc(ph || '?') + '">';
+  }
+  function pricePanel() {
+    var s = eng(), n = 0;
+    var main = [['Neurone de dragodinde', 'neurone'], ['Valeur d’un généton', 'genetonValue'], ['Queue de dragodinde sauvage', 'queuePrice'],
+                ['Queue de Glourséleste', 'glourPrice'], ['Filet universel', 'filet'], ['Rune visée (Muldo / Volkorne)', 'brisage.runePrice']];
+    var out = '<details class="prices" id="mes-prix"' + (S.pricesOpen ? ' open' : '') + '><summary>💰 <b>Mes prix</b> <span class="mini">— modifie-les ici depuis n’importe quel onglet : tout se recalcule et reste gardé sur cet appareil</span></summary><div class="prices-in">';
+    out += '<div class="pgrid">' + main.map(function (m) { return '<label class="field">' + m[0] + numInput(m[1], getPath(m[1])) + '</label>'; }).join('') + '</div>';
+    out += '<h4>Optimakinas (prix d’achat ; vide = coût du craft)</h4><div class="pgrid">' + Object.keys(E.OPTI).map(function (g) {
+      var craft = E.OPTI[g].base + E.OPTI[g].queues * (+S.queuePrice || 0);
+      return '<label class="field">Gén. ' + g + numInput('optiBuy.' + g, S.optiBuy[g], 'craft ' + f(craft)) + '</label>';
+    }).join('') + '</div>';
+    out += '<h4>Carburants (kamas pour 1 000 points)</h4>' + table(['Jauge'].concat(E.FAMILIES), E.JAUGES.map(function (j) {
+      return [esc(j)].concat(E.FAMILIES.map(function (fm, i) { return numInput('fuel.' + j + '.' + i, S.fuel[j][i]); }));
+    }));
+    out += '<h4>Runes</h4><div class="pgrid">' + Object.keys(S.runePrices).map(function (k) {
+      return '<label class="field">' + esc(k.replace('Rune ', '')) + numInput('runePrices.' + k, S.runePrices[k]) + '</label>';
+    }).join('') + '</div>';
+    out += '</div></details>';
+    return out;
+  }
   function render() {
     renderGlobal(); renderTabs();
     var main = document.getElementById('main');
     var fn = { objectif: tabObjectif, chemin: tabChemin, niveau: tabNiveau, renta: tabRenta, final: tabFinal, prix: tabPrix, brisage: tabBrisage, regles: tabRegles }[TAB];
-    try { main.innerHTML = fn(); } catch (e) { main.innerHTML = '<div class="box warn">Erreur de calcul : ' + esc(e.message) + '</div>'; console.error(e); }
+    try { main.innerHTML = pricePanel() + fn(); } catch (e) { main.innerHTML = '<div class="box warn">Erreur de calcul : ' + esc(e.message) + '</div>'; console.error(e); }
   }
 
   // ------------------------------------------------------------ 1. objectif
@@ -148,7 +173,7 @@
       ' avec tes réglages. La page cherche pour chaque génération le niveau des parents (1 à 200) et s’il faut une Optimakina.</p>';
     out += '<div class="cards">' +
       card('Durée estimée', days(pl.days), 'au mieux ' + days(pl.bestDays) + ' si tout réussit du premier coup') +
-      card('Captures gén. 1', f(Math.ceil(pl.capWithMargin)), 'dont ' + Math.round(S.capMargin * 100) + ' % de marge (sexes, hasard)') +
+      card('Captures gén. 1', f(Math.ceil(pl.capWithMargin)), S.capMargin ? 'dont ' + Math.round(S.capMargin * 100) + ' % de marge (sexes)' : 'capture sûre à 100 %, sans marge') +
       card('Optimakinas', f(Math.ceil(optiN)), Object.keys(pl.optiCount).length ? 'gén. ' + Object.keys(pl.optiCount).join(', ') : 'aucune') +
       card('Budget', f(pl.kamas) + ' kamas', 'carburant, XP, Makinas, filets') +
       card('Génétons gagnés', f(pl.genetons), 'en chemin et à la gén. 10 (~' + f(pl.genetons * (S.genetonValue || 0)) + ' kamas)') + '</div>';
@@ -171,15 +196,19 @@
     out += h('h3', null, 'Ce qu’il te faut');
     var caps = Object.keys(pl.captures).map(function (c) { return [esc(c), f(pl.captures[c], 1), '<b>' + f(Math.ceil(pl.captures[c] * (1 + S.capMargin))) + '</b>']; });
     var optRows = Object.keys(pl.optiCount).map(function (g) {
-      var u = E.optiCost(+g, R.s); return ['Optimakina gén. ' + g + ' (craft niv. ' + E.OPTI[g].lvl + ')', f(pl.optiCount[g], 1), '<b>' + f(Math.ceil(pl.optiCount[g])) + '</b>', u == null ? 'prix manquant' : f(u) + ' kamas pièce'];
+      var u = E.optiCost(+g, R.s); return ['Optimakina gén. ' + g + ' (craft niv. ' + E.OPTI[g].lvl + ')', f(pl.optiCount[g], 1), '<b>' + f(Math.ceil(pl.optiCount[g])) + '</b>',
+        numInput('optiBuy.' + g, S.optiBuy[g], u == null ? 'prix ?' : 'craft ' + f(u))];
     });
     out += '<div class="grid2"><div>' + table(['Capture (gén. 1, filet universel)', 'En moyenne', 'À prévoir'], caps) +
       '<p class="note">Le sexe est tiré au hasard : la marge sert à avoir des couples mâle + femelle.</p></div><div>' +
-      (optRows.length ? table(['Makina', 'En moyenne', 'À prévoir', 'Prix'], optRows) : '<div class="box">Aucune Optimakina dans cette stratégie.</div>') + '</div></div>';
+      (optRows.length ? table(['Makina', 'En moyenne', 'À prévoir', 'Ton prix (vide = craft)'], optRows) : '<div class="box">Aucune Optimakina dans cette stratégie.</div>') + '</div></div>';
     var mid = pl.nodes.filter(function (n) { return n.name !== S.target; }).map(function (n) { return [esc(n.name), n.gen, f(n.need, 2), f(Math.max(1, Math.ceil(n.need)))]; });
     out += '<details><summary class="mini">Les montures intermédiaires à réussir (' + mid.length + ' couleurs)</summary>' + table(['Couleur', 'Gén.', 'En moyenne', 'Au moins'], mid) + '</details>';
     out += '<div class="box"><b>Carburant :</b> ' + f(pl.fuelK) + ' kamas de fécondité · ' + f(pl.levK) + ' kamas d’XP · <b>Makinas :</b> ' + f(pl.optiK) + ' kamas · <b>Filets :</b> ' + f(pl.filetK) + ' kamas. ' +
-      '<span class="note">XP au carburant « ' + esc(S.xpFam) + ' », fécondité au « ' + esc(S.fertFam) + ' », ' + S.connexions + ' connexions par jour.</span></div>';
+      '<span class="note">XP au carburant « ' + esc(S.xpFam) + ' », fécondité au « ' + esc(S.fertFam) + ' », ' + S.connexions + ' connexions par jour. ' +
+      'Chaque tranche de jauge prend le carburant le moins cher capable de l’atteindre (seuils 80 000 / 140 000 / 180 000 / 200 000).</span>' +
+      (function () { var d = E.depositTotal(R.s); return d === null ? '' : '<br><b>Mise de départ :</b> ' + f(d) + ' kamas, une seule fois (le socle de chaque jauge sous le seuil de ton carburant, rempli au moins cher : Extraits jusqu’à 80 000…). ' +
+        '<span class="note">Il reste dans les jauges : ce n’est pas une dépense, mais il faut l’avoir.</span>'; })() + '</div>';
 
     out += h('h3', null, 'Comparer les stratégies');
     out += '<p class="lead">Même cible, mêmes prix. « Tout au niveau 200 » répond à ta question : attendre le niveau 200 coûte peu de kamas mais beaucoup de jours.</p>';
@@ -359,7 +388,7 @@
     var fr = E.JAUGES.map(function (j) {
       return [esc(j)].concat(E.FAMILIES.map(function (fm, i) {
         var pr = S.fuel[j][i], rn = S.fuelRecipe && S.fuelRecipe[j] ? S.fuelRecipe[j][i] : '';
-        return pr == null ? '<span class="dim">prix manquant</span>' : '<b>' + f(pr, 1) + '</b>' + (rn && rn !== '—' ? '<br><span class="mini">' + esc(rn) + '</span>' : '');
+        return numInput('fuel.' + j + '.' + i, pr) + (rn && rn !== '—' ? '<br><span class="mini">' + esc(rn) + '</span>' : '');
       }));
     });
     out += table(['Jauge (kamas pour 1 000 pts)'].concat(E.FAMILIES), fr);
@@ -404,8 +433,9 @@
       field('Bonus du jour (%)', 'alma', 'number', { min: 0, max: 100, note: 'Takeza ou Almanax : +20' }) +
       field('Sérénité à corriger par fournée', 'seren', 'number', { min: 0 }) +
       field('Montures par enclos', 'perEnclos', 'number', { min: 1, max: 10, step: 1 }) +
-      field('Marge de captures', 'capMargin', 'number', { min: 0, max: 3, step: 0.05, note: '0,25 = 25 %' }) + '</div><div class="form" style="margin-top:10px">' +
+      field('Marge de captures', 'capMargin', 'number', { min: 0, max: 3, step: 0.05, note: '0 = capture sûre à 100 % ; 0,25 si tu veux une marge pour les sexes' }) + '</div><div class="form" style="margin-top:10px">' +
       field('Cloner les stériles (2 stériles de même génération → 1 fertile)', 'clone', 'check') +
+      field('Génétique : parents seuls (sans les grands-parents)', 'parentsOnly', 'check', { note: 'les guides 2026 comptent encore les grands-parents ; coche pour tester l’autre hypothèse' }) +
       field('Compter les ratés de la couleur d’un parent comme un parent récupéré', 'recup', 'check') +
       field('Le clone garde son niveau', 'cloneKeepsLevel', 'check', { note: 'non documenté : décoché par prudence' }) + '</div>';
     out += '<p style="margin-top:14px"><button type="button" class="btn" data-reset="1">Remettre les valeurs par défaut</button></p>';
@@ -420,9 +450,12 @@
       'runes obtenues selon ses bonus, moins l’XP pour la monter au niveau de brisage, contre ses neurones à l’extraction. ' +
       '<b>Les dragodindes capturées (« sauvages ») n’ont aucun bonus</b> : leur brisage ne donne rien.</p>';
     out += '<div class="form">' + field('Niveau de brisage', 'ddBrise.L', 'number', { min: 1, max: 200, step: 1 }) +
-      field('Coefficient de brisage (%)', 'ddBrise.coef', 'number', { min: 1, max: 4000, note: 'propre à chaque serveur ; 90 = calé sur la vidéo' }) +
-      field('Niveau de l’objet monture', 'ddBrise.itemLevel', 'number', { min: 1, max: 200, step: 1, note: 'vidéo : 60 (niveau pour équiper une monture)' }) +
-      field('Part du bonus atteinte au niveau 100', 'ddBrise.curve100', 'number', { min: 0, max: 1, step: 0.05, note: '0,75 = 300 Vitalité sur 400' }) + '</div>';
+      field('Taux de brisage (%)', 'ddBrise.coef', 'number', { min: 1, max: 4000, note: 'montures : 50 % fixe, ni plus ni moins' }) + '</div>' +
+      '<details style="margin:6px 0"><summary class="mini">Réglages avancés du modèle</summary><div class="form" style="margin-top:8px">' +
+      field('Niveau de l’objet = niveau de la monture', 'ddBrise.mountLevel', 'check', { note: 'retrouve les mesures de la vidéo aux niveaux 100 et 200' }) +
+      field('Bonus comptés à leur maximum', 'ddBrise.jetMax', 'check', { note: 'un muldo sous le niveau 100 donne déjà des runes PM' }) +
+      field('Niveau d’objet fixe (si case décochée)', 'ddBrise.itemLevel', 'number', { min: 1, max: 200, step: 1 }) +
+      field('Part du bonus au niveau 100 (si case décochée)', 'ddBrise.curve100', 'number', { min: 0, max: 1, step: 0.05 }) + '</div></details>';
     var rows = E.NAMES.map(function (X) { return E.brisageDD(X, L, s); });
     var priced = rows.filter(function (r) { return !r.missing; }).sort(function (a, c) { return c.gain - a.gain; });
     var unpriced = rows.filter(function (r) { return r.missing; }).sort(function (a, c) { return a.breakEven.price - c.breakEven.price; });
@@ -455,41 +488,52 @@
     return out;
   }
   function tabBrisage() {
-    var b = S.brisage, rows = [], fine = [], places = S.enclos * b.perEnclos, capRate = 60 / Math.max(0.1, b.captureMin || 5);
+    var b = S.brisage, rows = [], fine = [], places = S.enclos * b.perEnclos, cpd = Math.max(1, +b.capturesPerDay || 40);
     for (var L = 1; L <= 200; L++) {
       var r0 = E.brisage(L, b);
-      // débit : tu captures à ton rythme, tes enclos montent « places » montures à la fois ; le plus lent des deux fixe le débit
-      r0.rate = r0.hours > 0 ? Math.min(capRate, places / r0.hours) : capRate;
-      r0.perHour = r0.profit * r0.rate;
+      // débit par jour : tes captures, ou ce que tes places d'enclos peuvent monter à ce niveau ; le plus petit des deux
+      r0.perDayMounts = r0.hours > 0 ? Math.min(cpd, places * 24 / r0.hours) : cpd;
+      r0.perDay = r0.profit * r0.perDayMounts;
+      r0.perPlaceDay = r0.hours > 0 ? r0.profit * 24 / r0.hours : null;
       fine.push(r0);
     }
     var best = function (k) { return fine.filter(function (r) { return r[k] != null && isFinite(r[k]); }).reduce(function (m, r) { return r[k] > m[k] ? r : m; }); };
-    var bp = best('pct'), bh = best('perHour'), bg = best('profit');
-    var out = brisageDDSection() + '<hr style="border:0;border-top:1px solid var(--line);margin:26px 0">' + h('h2', null, 'Muldo / Volkorne : à quel niveau briser ? (méthode de la vidéo)');
-    out += '<p class="lead">Reprise de la méthode de la vidéo : on monte les montures capturées à un niveau, puis on les brise pour des runes Ga PM ou Ga PA. ' +
-      'Formule de la vidéo : runes = (3 × niveau/100 × poids × 60 / 200 + 1) / 100, ce qui donne 0,82 rune Ga PM au niveau 100 (≈ 80 % observé).</p>';
+    var bp = best('pct'), bd = best('perDay'), bg = best('profit');
+    var out = brisageDDSection() + '<hr style="border:0;border-top:1px solid var(--line);margin:26px 0">' + h('h2', null, 'Muldo / Volkorne : à quel niveau briser ?');
+    out += '<p class="lead">On monte les montures capturées à un niveau, puis on les brise pour des runes Ga PM (muldo) ou Ga PA (volkorne). ' +
+      (b.model === 'video' ? 'Formule de la vidéo : runes = (3 × niveau/100 × poids × 60 / 200 + 1) / 100.' :
+        'Formule « jeu » : runes = (3 × 1 × poids × niveau / 200 + 1) × <b>50 %</b> / poids. Elle retrouve les deux mesures de la vidéo : <b>0,76</b> rune au niveau 100 (≈ 0,80 mesuré) et <b>1,51</b> au niveau 200 (76 runes pour 50 muldos).') + '</p>';
     out += '<div class="form">' +
+      field('Formule', 'brisage.model', 'select', { options: [['jeu', 'jeu : taux 50 %, niveau de la monture'], ['video', 'celle de la vidéo']] }) +
       field('Rune visée', 'brisage.weight', 'select', { num: 1, options: [[90, 'Ga PM (poids 90)'], [100, 'Ga PA (poids 100)']] }) +
+      field('Captures par jour', 'brisage.capturesPerDay', 'number', { min: 1, step: 1, note: 'ce que tu captures vraiment (risque de mort sur Ombre)' }) +
       field('Prix de la rune (kamas)', 'brisage.runePrice', 'number', { min: 0, note: 'vidéo : Ga PM 20 000, Ga PA 22 800' }) +
       field('Filet (kamas)', 'brisage.filet', 'number', { min: 0, note: 'vidéo : 1 210' }) +
       field('Kamas par point d’XP', 'brisage.pricePerXp', 'number', { min: 0, step: 0.0001, note: 'classeur (Extrait) 0,0125 · vidéo 0,33' }) +
       field('XP par heure', 'brisage.xpPerHour', 'number', { min: 1, note: 'Extrait : 3 600' }) +
       field('Montures par enclos', 'brisage.perEnclos', 'number', { min: 1, max: 10, step: 1 }) +
-      field('Taxe HDV', 'brisage.tax', 'number', { min: 0, max: 1, step: 0.01 }) +
-      field('Minutes de jeu par capture', 'brisage.captureMin', 'number', { min: 0.1, step: 0.5, note: 'combat + filet, par monture' }) + '</div>';
-    out += '<p class="note">Débit : avec tes ' + places + ' places d’enclos (réglage « Enclos » en haut) et une capture toutes les ' + f(b.captureMin || 5, 1) + ' min, ce qui te limite est le plus lent des deux.</p>';
-    out += '<div class="box verdict">Meilleur <b>% de bénéfice</b> : niv. <b>' + bp.L + '</b> (' + pct(bp.pct) + ') · meilleur <b>kamas par heure</b> en capturant en continu : niv. <b>' + bh.L + '</b> (' + f(bh.perHour) + ' kamas/h, ' + f(bh.rate, 1) + ' montures/h) · plus gros <b>bénéfice brut</b> : niv. <b>' + bg.L + '</b> (' + f(bg.profit) + ' kamas par monture).</div>';
+      field('Taxe HDV', 'brisage.tax', 'number', { min: 0, max: 1, step: 0.01 }) + '</div>';
+    var lim = places * 24 / Math.max(1, cpd), Lfit = fine.filter(function (r) { return r.hours <= lim; }).pop();
+    out += '<div class="box verdict"><b>Ton meilleur niveau : ' + bd.L + '</b> → ' + f(bd.perDay) + ' kamas par jour (' + f(bd.perDayMounts, 1) + ' montures brisées par jour, ' + f(bd.profit) + ' kamas chacune). ' +
+      'Avec ' + cpd + ' captures par jour et ' + places + ' places, chaque monture peut rester ' + hours(lim) + ' en enclos : c’est le niveau ' + (Lfit ? Lfit.L : 1) + '. ' +
+      'Au-dessus, tes enclos ne suivent plus tes captures ; en dessous, tu brises des montures moins rentables.</div>';
+    out += '<div class="box">Les autres repères, à ne pas confondre : meilleur <b>% de bénéfice</b> au niveau <b>' + bp.L + '</b> (' + pct(bp.pct) + ', le meilleur rendement de chaque kama dépensé) · ' +
+      'plus gros <b>bénéfice par monture</b> au niveau <b>' + bg.L + '</b> (' + f(bg.profit) + ' kamas). ' +
+      'Le « niveau 42-45 » de la vidéo est son meilleur %, avec une XP chère (0,33 kama par point, filet à 1 210) : avec les Extraits du classeur, l’XP coûte 26 fois moins et ce repère monte vers 100.</div>';
     var xs = fine.map(function (r) { return r.L; });
     out += lineChart([
       { name: 'Bénéfice par monture (kamas)', color: '#d6aa4f', ys: fine.map(function (r) { return r.profit; }), mark: bg.L },
       { name: '% de bénéfice (axe de droite)', color: '#5fcf8f', ys: fine.map(function (r) { return r.pct; }), axis: 'r', dash: true, mark: bp.L }
     ], { xs: xs, xticks: [1, 25, 50, 75, 100, 125, 150, 175, 200], xlabel: 'niveau au moment du brisage', rfmt: function (v) { return f(v * 100) + ' %'; }, title: 'bénéfice du brisage' });
-    [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200].forEach(function (L) {
-      var r = fine[L - 1], hi = L === bp.L || L === bh.L || L === bg.L;
-      rows.push({ cls: hi ? 'best' : '', cells: ['niv. ' + L, f(r.runes, 2), f(r.xp), f(r.cost), f(r.gross), '<b>' + f(r.profit) + '</b>', pct(r.pct), hours(r.hours), f(r.rate, 1), f(r.perHour)] });
+    var lv = [1, 10, 20, 30, 40, 42, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200];
+    if (lv.indexOf(bd.L) < 0) lv.push(bd.L);
+    lv.sort(function (x, y) { return x - y; }).forEach(function (L) {
+      var r = fine[L - 1], hi = L === bd.L;
+      rows.push({ cls: hi ? 'best' : (L === bp.L || L === bg.L ? 'sel' : ''), cells: ['niv. ' + L, f(r.runes, 2), f(r.xp), f(r.cost), '<b>' + f(r.profit) + '</b>', pct(r.pct), hours(r.hours), f(r.perPlaceDay), f(r.perDayMounts, 1), '<b>' + f(r.perDay) + '</b>'] });
     });
-    out += table(['Niveau', 'Runes', 'XP', 'Coût XP', 'Kamas bruts', 'Bénéfice', '% bénéfice', 'Temps d’XP', 'Montures / h', 'Kamas / heure'], rows);
-    out += '<p class="note">Comme dans la vidéo : le coût de l’XP est divisé par le nombre de montures de l’enclos, et le filet est compté une fois par monture. Le bénéfice brut monte avec le niveau ; le % et les kamas par heure passent par un maximum.</p>';
+    out += table(['Niveau', 'Runes', 'XP', 'Coût XP', 'Bénéfice / monture', '% bénéfice', 'Temps d’XP', 'Kamas / place / jour', 'Montures / jour', 'Kamas / jour'], rows);
+    out += '<p class="note">Le coût de l’XP est partagé entre les ' + b.perEnclos + ' montures de l’enclos, le filet compté une fois par monture. Les runes montent en ligne droite avec le niveau, l’XP de plus en plus vite : ' +
+      'le bénéfice par monture grimpe jusqu’au 200, mais chaque monture occupe une place plus longtemps. « Kamas / jour » prend le plus petit entre tes captures et ce que tes places peuvent monter.</p>';
     return out;
   }
 
@@ -514,7 +558,10 @@
       '<b>Clone</b> : dofuspourlesnoobs et le calculateur Muldo le disent tiré <b>au hasard</b> entre les deux stériles. Pour choisir, clone deux stériles de la même couleur (ou du même sexe).',
       '<b>Le clone garde-t-il son niveau ?</b> Aucune source : décoché par défaut.',
       '<b>Niveau d’une capture</b> : non documenté (niveau 1 par défaut, réglable en haut).',
-      '<b>Durée</b> : estimation moyenne (voir « Gén. 10 ») ; avec 2 connexions par jour, une fécondité prend une journée.'
+      '<b>Durée</b> : estimation moyenne (voir « Gén. 10 ») ; avec 2 connexions par jour, une fécondité prend une journée.',
+      '<b>Minuteur</b> : mêmes règles que le <a href="https://dofus-portals.fr/outils/timer-elevage/" target="_blank" rel="noopener">timer d’élevage de dofus-portals</a> (un tic toutes les 10 s, gain de 10 / 20 / 30 / 40 selon la charge restante), avec les paliers doublés de la 3.7. ' +
+        'Non compté ici : une capacité (Amoureuse, Endurante, Précoce, Sage) ou la méryde du jour double le gain de sa jauge, jusqu’à ×4, sans vider la charge plus vite — tes durées réelles peuvent donc être plus courtes.',
+      '<b>Brisage des montures</b> : taux fixe de 50 % (constaté en jeu), niveau de l’objet = niveau de la monture, bonus à leur maximum ; ce modèle retrouve les mesures de la vidéo (0,76 rune Ga PM au niveau 100, 1,51 au 200).'
     ]);
     out += h('h3', null, 'Sources');
     out += li([
@@ -544,6 +591,7 @@
     save(); render();
   }
   document.addEventListener('change', onChange);
+  document.addEventListener('toggle', function (e) { if (e.target && e.target.id === 'mes-prix') { S.pricesOpen = e.target.open; save(); } }, true);
   document.addEventListener('click', function (e) {
     var tb = e.target.closest('[data-tab]');
     if (tb) { TAB = tb.getAttribute('data-tab'); history.replaceState(null, '', '#' + TAB); render(); window.scrollTo(0, 0); return; }
@@ -554,6 +602,6 @@
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'objectif'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (rentabilité)';
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (brisage 50 %, seuils, mes prix)';
   render();
 })();

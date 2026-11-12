@@ -35,9 +35,10 @@
     var ob = s.optiBonus == null ? 20 : s.optiBonus, alma = s.alma || 0;
     return clamp((30 + 0.15 * (LA + LB) + (opti ? ob : 0) + alma) / 100, 0, 1);
   }
-  function lineage(m) {
+  // parentsOnly : réglage « parents seuls » (hypothèse à tester en jeu) ; par défaut parents + grands-parents, comme les guides 2026
+  function lineage(m, parentsOnly) {
     var w = new Map(); add(w, m, 8);
-    TREE[m].p.forEach(function (a) { add(w, a, 3); });
+    if (!parentsOnly) TREE[m].p.forEach(function (a) { add(w, a, 3); });
     return w;
   }
   /* Répartition des issues d'un accouplement — modèle du simulateur dofuselevage.fr (non officiel) :
@@ -45,9 +46,10 @@
      pénalité génération^-0,55 ; la génération cible prend pTarget, le reste se répartit au prorata. */
   var OUT_CACHE = {};
   function outcomes(A, B, LA, LB, opti, s) {
-    var ck = [A, B, LA, LB, opti ? 1 : 0, s && s.optiBonus, s && s.alma].join('~');
+    var po = !!(s && s.parentsOnly);
+    var ck = [A, B, LA, LB, opti ? 1 : 0, s && s.optiBonus, s && s.alma, po ? 1 : 0].join('~');
     if (OUT_CACHE[ck]) return OUT_CACHE[ck];
-    var fa = lineage(A), fb = lineage(B), raw = new Map();
+    var fa = lineage(A, po), fb = lineage(B, po), raw = new Map();
     fa.forEach(function (wa, a) {
       fb.forEach(function (wb, b) {
         var loc = new Map(); add(loc, a, 1); add(loc, b, 1);
@@ -115,11 +117,35 @@
   }
   // une fécondité = 2 phases de 20 000 pts (Endurance + Maturité, puis Amour) ; chaque phase attend la connexion suivante
   function fertHours(s) { var phase = 20000 / RATE[famIdx(s.fertFam)] / 60; return 2 * Math.max(phase, s.refillH); }
-  function fertCost(s) {   // kamas par monture pour une fécondité (3 jauges à 20 000 + sérénité), jauge tenue au palier de la famille
+  /* Seuils : un carburant remplit la jauge jusqu'à son plafond (Extrait 80 000, Philtre 140 000, Potion 180 000, Élixir 200 000),
+     et le débit dépend de la charge, pas du carburant. On combine donc : chaque tranche se remplit avec le carburant le moins cher
+     capable de l'atteindre (une tranche basse peut prendre un Philtre ou une Potion s'ils reviennent moins cher). */
+  function cheapestFrom(row, k) {
+    var best = null;
+    for (var f = k; f < 4; f++) { var pr = num(row[f]); if (pr !== null && (best === null || pr < best)) best = pr; }
+    return best;
+  }
+  function fertCost(s) {   // kamas par monture pour une fécondité (3 jauges à 20 000 + sérénité), points consommés dans la tranche de la famille choisie
     var fi = famIdx(s.fertFam), tot = 0;
     var pts = { 'Endurance': 20000, 'Maturité': 20000, 'Amour': 20000, 'Gain de sérénité': s.seren / 2, 'Perte de sérénité': s.seren / 2 };
-    for (var j in pts) { var pr = num(s.fuel[j][fi]); if (pr === null) return null; tot += pts[j] / 1000 * pr; }
+    for (var j in pts) { var pr = cheapestFrom(s.fuel[j], fi); if (pr === null) return null; tot += pts[j] / 1000 * pr; }
     return tot / s.perEnclos;
+  }
+  /* Mise de départ : pour tourner au débit d'une famille, la charge doit rester au-dessus du seuil de la famille d'en dessous.
+     Ce socle se pose une fois par jauge et par enclos, au moins cher par tranche (Extraits jusqu'à 80 000, etc.) ; il n'est pas consommé. */
+  function baseDeposit(fam, row) {
+    var fi = famIdx(fam), tot = 0;
+    for (var k = 0; k < fi; k++) {
+      var pr = cheapestFrom(row, k); if (pr === null) return null;
+      tot += (CAPS[k] - (k === 0 ? 0 : CAPS[k - 1])) / 1000 * pr;
+    }
+    return tot;
+  }
+  function depositTotal(s) {   // par enclos : Endurance, Maturité, Amour au palier de fécondité + Expérience au palier d'XP ; × nombre d'enclos
+    var t = 0, ok = true;
+    ['Endurance', 'Maturité', 'Amour'].forEach(function (j) { var d = baseDeposit(s.fertFam, s.fuel[j]); if (d === null) ok = false; else t += d; });
+    var x = baseDeposit(s.xpFam, s.fuel['Expérience']); if (x === null) ok = false; else t += x;
+    return ok ? t * s.enclos : null;
   }
   // préparation d'un parent : fécondité + XP ; la Mangeoire tourne aussi pendant la 2e phase (Amour), d'où le chevauchement
   function prepHours(startLvl, L, s) {
@@ -374,8 +400,13 @@
     L = clamp(L, 1, 200);
     return L <= 100 ? max * c * L / 100 : max * (c + (1 - c) * (L - 100) / 100);
   }
-  function runeLine(stat, value, b, prices, tax) {
-    var st = BR.stats[stat], W = (3 * value * st.weight * b.itemLevel / 200 + 1) * b.coef / 100;
+  /* Modèle « jeu » (par défaut) : taux de brisage fixe de 50 % pour les montures (constaté en jeu par l'utilisateur),
+     niveau de l'objet = niveau de la monture, bonus comptés à leur valeur maximale (un muldo sous le niveau 100 n'affiche
+     pas son PM mais donne quand même des runes Ga PM). Il retrouve les deux mesures de la vidéo :
+     0,756 rune Ga PM au niveau 100 (≈ 0,80 mesuré) et 1,506 au niveau 200 (76 runes pour 50 muldos = 1,52). */
+  function itemLevelOf(L, b) { return b.mountLevel === false ? b.itemLevel : clamp(L, 1, 200); }
+  function runeLine(stat, value, b, prices, tax, L) {
+    var st = BR.stats[stat], W = (3 * value * st.weight * itemLevelOf(L, b) / 200 + 1) * b.coef / 100;
     var rs = st.runes.slice().sort(function (x, y) { return y[1] - x[1]; }), left = W, kamas = 0, missing = false, got = [];
     rs.forEach(function (r, i) {
       var rw = r[1] * st.weight, n = i === rs.length - 1 ? left / rw : Math.floor(left / rw + 1e-9);
@@ -390,7 +421,9 @@
   }
   function brisageDD(X, L, s) {
     var b = s.ddBrise, prices = s.runePrices || {}, tax = num(s.tax) || 0, bonus = BR.dd[X] || {};
-    var lines = Object.keys(bonus).map(function (st) { return runeLine(st, statAtLevel(bonus[st], L, b), b, prices, tax); });
+    var lines = Object.keys(bonus).map(function (st) {
+      return runeLine(st, b.jetMax === false ? statAtLevel(bonus[st], L, b) : bonus[st], b, prices, tax, L);
+    });
     var kamas = lines.reduce(function (a, l) { return a + l.kamas; }, 0), missing = lines.filter(function (l) { return l.missing; });
     var xp = levelCost(1, L, s), hours = levelHours(1, L, s);
     var extract = TREE[X].gen >= 2 ? TREE[X].gen * (num(s.neurone) || 0) * (1 - tax) : 0;
@@ -415,9 +448,16 @@
     return best;
   }
 
-  // ---------------------------------------------------------------- brisage Muldo / Volkorne (formule de la vidéo)
+  // ---------------------------------------------------------------- brisage Muldo / Volkorne
+  // « jeu » : (3 × bonus × poids × niveau de la monture / 200 + 1) × taux / poids de la rune ; « video » : formule de la vidéo
+  function brisageRunes(L, b) {
+    if (b.model === 'video') return (3 * (L / 100) * b.weight * b.itemLevel / 200 + 1) / b.divisor;
+    var stat = num(b.stat); if (stat === null) stat = 1;
+    var coef = num(b.coef); if (coef === null) coef = 50;
+    return (3 * stat * b.weight * clamp(L, 1, 200) / 200 + 1) * coef / 100 / b.weight;
+  }
   function brisage(L, b) {
-    var runes = (3 * (L / 100) * b.weight * b.itemLevel / 200 + 1) / b.divisor;
+    var runes = brisageRunes(L, b);
     var xp = xpBetween(b.capLevel, L), cost = xp * b.pricePerXp / b.perEnclos;
     var gross = runes * b.runePrice * (1 - b.tax);
     var profit = gross - cost - b.filet, hours = xp / b.xpPerHour;
@@ -428,7 +468,7 @@
   var API = { TREE: TREE, XP: XP, NAMES: NAMES, GEN1: GEN1, GENETONS: GENETONS, FAMILIES: FAMILIES, CAPS: CAPS, RATE: RATE, JAUGES: JAUGES,
               OPTI: OPTI, LEVELS: LEVELS, recipe: recipe, pTarget: pTarget, outcomes: outcomes, recovery: recovery, drain: drain,
               xpPerHour: xpPerHour, refillCostPer1000: refillCostPer1000, xpBetween: xpBetween, levelHours: levelHours, levelCost: levelCost,
-              fertHours: fertHours, fertCost: fertCost, prepHours: prepHours, optiCost: optiCost, plan: plan, unitCosts: unitCosts,
+              fertHours: fertHours, fertCost: fertCost, cheapestFrom: cheapestFrom, baseDeposit: baseDeposit, depositTotal: depositTotal, prepHours: prepHours, optiCost: optiCost, plan: plan, unitCosts: unitCosts,
               optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);

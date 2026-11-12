@@ -100,24 +100,63 @@ t('analyse de niveau : lignes complètes, optimum trouvé', () => {
   assert.ok(la.bestKamas[1].L >= 1 && la.bestHours[0].L >= 1);
   la.rows.forEach(r => { assert.ok(isFinite(r.kamas) && isFinite(r.placeH), 'L' + r.L); });
 });
-t('brisage (vidéo) : 0,82 rune Ga PM au niveau 100, 0,018 au niveau 1', () => {
-  const b = Object.assign({}, DEF.brisage);
+t('brisage (formule de la vidéo) : 0,82 rune Ga PM au niveau 100, 0,018 au niveau 1', () => {
+  const b = Object.assign({}, DEF.brisage, { model: 'video' });
   near(E.brisage(100, b).runes, 0.82, 1e-9); near(E.brisage(1, b).runes, 0.0181, 1e-6);
+});
+t('brisage (jeu, taux 50 %) : retrouve les mesures de la vidéo (≈ 0,80 au niv. 100, 76/50 = 1,52 au niv. 200)', () => {
+  const b = Object.assign({}, DEF.brisage);
+  assert.strictEqual(b.model, 'jeu'); assert.strictEqual(b.coef, 50);
+  near(E.brisage(100, b).runes, (3 * 90 * 100 / 200 + 1) * 0.5 / 90, 1e-12); near(E.brisage(100, b).runes, 0.80, 0.05);
+  near(E.brisage(200, b).runes, 76 / 50, 0.02);
+  const pa = Object.assign({}, b, { weight: 100 }); near(E.brisage(100, pa).runes, (3 * 100 * 100 / 200 + 1) * 0.5 / 100, 1e-12);
 });
 t('brisage DD : bonus selon le niveau (75 % au niveau 100)', () => {
   const b = DEF.ddBrise;
   near(E.statAtLevel(400, 100, b), 300, 1e-9); near(E.statAtLevel(400, 200, b), 400, 1e-9); near(E.statAtLevel(400, 150, b), 350, 1e-9); near(E.statAtLevel(400, 1, b), 3, 1e-9);
 });
-t('brisage DD : Prune niveau 200 → 1,64 Rune Po et 6 Ra Vi + 1 Pa Vi + 2,7 Vi (recalcul à la main)', () => {
-  const r = E.brisageDD('Prune', 200, S);
+t('brisage DD, ancien modèle (90 %, objet niveau 60, bonus selon le niveau) : Prune niveau 200 → 1,64 Rune Po et 6 Ra Vi + 1 Pa Vi + 2,7 Vi', () => {
+  const s = Object.assign({}, S, { ddBrise: { L: 200, coef: 90, mountLevel: false, jetMax: false, itemLevel: 60, curve100: 0.75 } });
+  const r = E.brisageDD('Prune', 200, s);
   const po = r.lines.find(l => l.stat === 'Portée'), vi = r.lines.find(l => l.stat === 'Vitalité');
   near(po.weight, (3 * 2 * 51 * 60 / 200 + 1) * 0.9, 1e-9); near(po.runes[0].n, po.weight / 51, 1e-9);
   near(vi.weight, (3 * 400 * 0.2 * 60 / 200 + 1) * 0.9, 1e-9);
   assert.deepStrictEqual(vi.runes.map(x => [x.rune, +x.n.toFixed(2)]), [['Rune Ra Vi', 6], ['Rune Pa Vi', 1], ['Rune Vi', 2.7]]);
   near(r.kamas, (6 * 1317 + 442 + 2.7 * 135) * 0.97, 1e-6);
+});
+t('brisage DD, modèle jeu (50 %, niveau de la monture, bonus max) : Prune niveau 200 → 3,01 Rune Po et 12 Ra Vi + 0,5 Vi', () => {
+  const r = E.brisageDD('Prune', 200, S);
+  const po = r.lines.find(l => l.stat === 'Portée'), vi = r.lines.find(l => l.stat === 'Vitalité');
+  near(po.weight, (3 * 2 * 51 * 200 / 200 + 1) * 0.5, 1e-9); near(po.runes[0].n, 153.5 / 51, 1e-9);
+  near(vi.weight, (3 * 400 * 0.2 * 200 / 200 + 1) * 0.5, 1e-9);
+  assert.deepStrictEqual(vi.runes.map(x => [x.rune, +x.n.toFixed(2)]), [['Rune Ra Vi', 12], ['Rune Vi', 0.5]]);
+  near(r.kamas, (12 * 1317 + 0.5 * 135) * 0.97, 1e-6);
   near(r.extract, 9 * 23000 * 0.97, 1e-6);
   assert.strictEqual(r.missing, true); assert.strictEqual(r.breakEven.rune, 'Rune Po');
   near(r.breakEven.price, (r.extract + r.xp - r.kamas) / (po.baseCount * 0.97), 1e-6);
+});
+t('seuils : la fécondité prend le carburant le moins cher capable d’atteindre la tranche', () => {
+  const fuel = JSON.parse(JSON.stringify(S.fuel)); fuel['Endurance'] = [10, 300, 200, 400];   // Potion moins chère que Philtre
+  const s = Object.assign({}, S, { fuel, fertFam: 'Philtre' });
+  const exp = (20000 * 200 + 20000 * Math.min(50.9, 247.3) + 20000 * 134.3 + 3000 * 263.5 + 3000 * 153.7) / 1000 / 10;
+  near(E.fertCost(s), exp, 1e-6);
+  near(E.fertCost(Object.assign({}, S, { fertFam: 'Extrait' })), 146.0, 0.2);
+});
+t('mise de départ : socle sous le seuil, au moins cher par tranche', () => {
+  near(E.baseDeposit('Extrait', S.fuel['Amour']), 0, 1e-12);
+  near(E.baseDeposit('Philtre', S.fuel['Amour']), 80 * 3.4, 1e-9);
+  near(E.baseDeposit('Potion', S.fuel['Endurance']), 80 * 18.7 + 60 * 180.8, 1e-9);
+  const s = Object.assign({}, S, { fertFam: 'Philtre', xpFam: 'Potion', enclos: 2 });
+  near(E.depositTotal(s), 2 * (80 * 18.7 + 80 * 46.5 + 80 * 3.4 + (80 * 12.5 + 60 * 347)), 1e-6);
+});
+t('génétique : « parents seuls » retire les grands-parents et rend plus souvent un parent', () => {
+  const g = E.outcomes('Amande et Dorée', 'Dorée et Rousse', 1, 1, false, S);
+  const p = E.outcomes('Amande et Dorée', 'Dorée et Rousse', 1, 1, false, Object.assign({}, S, { parentsOnly: true }));
+  assert.deepStrictEqual(p.items.map(i => i.name).sort(), ['Amande et Dorée', 'Dorée et Rousse', 'Ébène']);
+  assert.ok(g.items.some(i => i.name === 'Dorée'));
+  near(p.pTarget, g.pTarget, 1e-12);
+  const r = E.recovery('Amande et Dorée', 'Dorée et Rousse', 1, 1, false, Object.assign({}, S, { parentsOnly: true }));
+  near(r.rA + r.rB, 1, 1e-9);
 });
 t('brisage DD : les 66 couleurs ont des bonus, gén. 1 sans neurone', () => {
   for (const X of E.NAMES) { assert.ok(Object.keys(E.BR.dd[X]).length >= 2, X); }

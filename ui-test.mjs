@@ -62,7 +62,7 @@ try {
   check('clic sur Prune et Émeraude : issues affichées', h3.includes('Prune × Émeraude'), h3);
   // 6. tous les onglets sans erreur
   await ev(`location.hash = '#brisage'`); await sleep(1500);
-  const ddRows = await ev(`[...document.querySelectorAll('h2')].map(x => x.textContent).join(' | ') + ' #' + document.querySelectorAll('main table')[0].querySelectorAll('tbody tr').length`);
+  const ddRows = await ev(`[...document.querySelectorAll('h2')].map(x => x.textContent).join(' | ') + ' #' + Math.max(...[...document.querySelectorAll('main table')].filter(t => !t.closest('#mes-prix')).map(t => t.querySelectorAll('tbody tr').length))`);
   check('brisage : section dragodindes avec 66 lignes', ddRows.includes('briser ou extraire') && ddRows.endsWith('#66'), ddRows);
   await ev(`(() => { const e = document.querySelector('[data-k="runePrices.Rune Po"]'); e.value = '200000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1500);
   const prune = await ev(`[...document.querySelectorAll('main tr')].map(t => t.textContent).find(t => t.startsWith('Prune1') || t.startsWith('Prune9'))`);
@@ -79,6 +79,18 @@ try {
   await ev(`document.querySelector('[data-fuel="Potion|Extrait"]').click()`); await sleep(3500);
   const fam = await ev(`document.querySelector('[data-k="xpFam"]').value + '|' + document.querySelector('[data-k="fertFam"]').value`);
   check('clic sur Potion / Extrait : réglage adopté', fam === 'Potion|Extrait', fam);
+  // 6 ter. « Mes prix » : présent sur chaque onglet, une saisie recalcule l'onglet en cours
+  await ev(`location.hash = '#objectif'`); await sleep(1500);
+  const panel = await ev(`!!document.querySelector('#mes-prix') && document.querySelectorAll('#mes-prix input').length`);
+  check('« Mes prix » sur l’onglet Gén. 10, avec ses champs', panel > 60, panel);
+  // une Optimakina vraiment utilisée par la stratégie affichée (première ligne du tableau « Makina », hors panneau)
+  const usedGen = await ev(`(() => { const i = [...document.querySelectorAll('[data-k^="optiBuy."]')].find(x => !x.closest('#mes-prix')); return i ? i.getAttribute('data-k').split('.')[1] : null; })()`);
+  const before2 = await ev(`document.querySelectorAll('.card .v')[3].textContent`);
+  await ev(`(() => { const e = document.querySelector('#mes-prix [data-k="optiBuy.${usedGen}"]'); e.value = '90000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(2500);
+  const after2 = await ev(`document.querySelectorAll('.card .v')[3].textContent + ' | ' + document.querySelector('#mes-prix [data-k="optiBuy.${usedGen}"]').value`);
+  check('prix d’une Optimakina utilisée (gén. ' + usedGen + ') changé depuis « Mes prix » : budget recalculé', usedGen && after2.split(' | ')[0] !== before2 && after2.endsWith('| 90000'), [before2, after2]);
+  const capCard = await ev(`document.querySelectorAll('.card .s')[1].textContent`);
+  check('captures sans marge (capture sûre)', capCard.includes('100 %'), capCard);
   // 7. remise à zéro
   await ev(`window.confirm = () => true; document.querySelector('[data-tab="prix"]').click()`); await sleep(1000);
   await ev(`document.querySelector('[data-reset]').click()`); await sleep(1500);
