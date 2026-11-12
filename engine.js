@@ -43,21 +43,26 @@
     var ob = s.optiBonus == null ? 20 : s.optiBonus, alma = s.alma || 0;
     return clamp((30 + 0.15 * (LA + LB) + (opti ? ob : 0) + alma) / 100, 0, 1);
   }
-  // parentsOnly : réglage « parents seuls » (hypothèse à tester en jeu) ; par défaut parents + grands-parents, comme les guides 2026
-  function lineage(m, parentsOnly) {
-    var w = new Map(); add(w, m, 8);
-    if (!parentsOnly) TREE[m].p.forEach(function (a) { add(w, a, 3); });
+  /* Une monture = sa couleur + ses VRAIS parents : l'arbre s'arrête aux grands-parents du bébé (guide de l'éleveur 2026).
+     Une capture n'a pas de parents ; une monture réussie a pour parents sa recette ; un bébé RATÉ a pour parents le couple
+     qui l'a fait naître : il garde donc la recette de l'étape dans son arbre. */
+  function canon(m) { return { c: m, p: TREE[m].p }; }
+  function lineage(ind) {
+    var w = new Map(); add(w, ind.c, 8);
+    (ind.p || []).forEach(function (a) { add(w, a, 3); });
     return w;
   }
+  function indKey(ind) { return ind.c + '<' + (ind.p || []).join('+'); }
   /* Répartition des issues d'un accouplement — modèle du simulateur dofuselevage.fr (non officiel) :
      parent ×8, grand-parents ×3 ; chaque couple de la grille donne ses deux couleurs et leur croisement s'il existe ;
-     pénalité génération^-0,55 ; la génération cible prend pTarget, le reste se répartit au prorata. */
+     pénalité génération^-0,55 ; la génération cible (« la plus haute atteignable selon les parents et les grands-parents »)
+     prend pTarget, le reste se répartit au prorata. */
   var OUT_CACHE = {};
-  function outcomes(A, B, LA, LB, opti, s) {
-    var po = !!(s && s.parentsOnly);
-    var ck = [A, B, LA, LB, opti ? 1 : 0, s && s.optiBonus, s && s.alma, po ? 1 : 0].join('~');
+  function outcomes(A, B, LA, LB, opti, s) { return outcomesInd(canon(A), canon(B), LA, LB, opti, s); }
+  function outcomesInd(ia, ib, LA, LB, opti, s) {
+    var ck = [indKey(ia), indKey(ib), LA, LB, opti ? 1 : 0, s && s.optiBonus, s && s.alma].join('~');
     if (OUT_CACHE[ck]) return OUT_CACHE[ck];
-    var fa = lineage(A, po), fb = lineage(B, po), raw = new Map();
+    var fa = lineage(ia), fb = lineage(ib), raw = new Map();
     fa.forEach(function (wa, a) {
       fb.forEach(function (wb, b) {
         var loc = new Map(); add(loc, a, 1); add(loc, b, 1);
@@ -85,6 +90,40 @@
     var pa = 0, pb = 0;
     o.items.forEach(function (i) { if (i.name === A) pa = i.p; if (i.name === B) pb = i.p; });
     return { p: o.pTarget, rA: f > 0 ? pa / f : 0, rB: f > 0 ? pb / f : 0, out: o };
+  }
+  /* Bébés ratés de A × B : ils ont A et B pour parents. Recroisé avec un parent neuf (ou un autre raté), un raté garde la
+     recette A × B dans son arbre : la génération visée reste atteignable. pRe = chance du bébé visé quand un raté est recroisé
+     avec un neuf du côté le moins avancé ; genF = génétons moyens qu'un raté rapporte comme parent (selon SA génération). */
+  var FAIL_CACHE = {};
+  function failStats(A, B, L, opti, s) {
+    var ck = [A, B, L, opti ? 1 : 0, s.optiBonus, s.alma].join('~');
+    if (FAIL_CACHE[ck]) return FAIL_CACHE[ck];
+    var o = outcomes(A, B, L, L, opti, s), X = recipe(A, B), other = TREE[A].gen <= TREE[B].gen ? A : B;
+    var fails = o.items.filter(function (i) { return !i.target; }), f = fails.reduce(function (a, i) { return a + i.p; }, 0);
+    var pRe = 0, genF = 0, w = 0;
+    fails.forEach(function (i) {
+      var q = f > 0 ? i.p / f : 0; if (q < 1e-4) return;
+      var oc = outcomesInd({ c: i.name, p: [A, B] }, canon(other), L, L, opti, s), px = 0;
+      oc.items.forEach(function (j) { if (j.name === X) px = j.p; });
+      pRe += q * px; genF += q * GENETONS[i.gen]; w += q;
+    });
+    return (FAIL_CACHE[ck] = { pRe: w ? pRe / w : o.pTarget, genF: w ? genF / w : 0, fails: fails, other: other });
+  }
+  /* Réserve de parents d'une étape, suivie par TOURS (modèle moyen) : à chaque tour la moitié de la réserve s'accouple ;
+     les deux parents deviennent stériles ; avec le clonage deux stériles redonnent un fertile (niveau 1) ; en recroisant
+     les ratés, chaque bébé raté revient dans la réserve ; une réussite en sort.
+     d = part de la réserve qui reste après un tour ; y = réussites par parent neuf si on recroise jusqu'au bout. */
+  function poolParams(p, s) {
+    var reuse = s.reuse !== false, cl = !!s.clone;
+    if (reuse && cl) return { d: 1 - p / 2, y: 1 };
+    if (reuse) return { d: (1 - p) / 2, y: p / (1 + p) };
+    if (cl) return { d: 0.5, y: p };
+    return { d: 0, y: p / 2 };
+  }
+  // parents neufs pour `need` réussites en `k` tours (1 tour = tout en parallèle, sans recroiser)
+  function freshFor(need, p, k, s) {
+    var pp = poolParams(p, s), kk = pp.d <= 0 ? 1 : Math.max(1, k || 1);
+    return need / (pp.y * (1 - Math.pow(pp.d, kk)));
   }
 
   // ---------------------------------------------------------------- jauges, XP, temps, coûts
@@ -175,44 +214,56 @@
     return buy !== null ? buy : optiCraft(gen, s);
   }
 
+  /* Parents neufs par côté pour `need` réussites en k tours.
+     Étape équilibrée (deux parents de même génération) : la réserve commune (freshFor), moitié de chaque côté.
+     Étape déséquilibrée (ex. Prune × Rousse) avec ratés recroisés : chaque neuf du côté le plus avancé lance une « chaîne » ;
+     un raté le remplace (il garde la recette dans son arbre) et la chaîne s'arrête à la réussite : en k tours elle réussit avec
+     1 − (1 − p)^k. Côté le moins avancé : un neuf par tentative, moins les clones de ses stériles revenus au tour suivant. */
+  function freshSplit(need, p, k, A, B, s) {
+    var gA = TREE[A].gen, gB = TREE[B].gen, kk = Math.max(1, k || 1);
+    if (s.reuse === false || gA === gB || poolParams(p, s).d <= 0) { var N0 = freshFor(need, p, kk, s); return { A: N0 / 2, B: N0 / 2 }; }
+    var hi = need / (1 - Math.pow(1 - p, kk)), lo = need / p * (1 - (s.clone ? 0.5 * (kk - 1) / kk : 0));
+    return gA > gB ? { A: hi, B: lo } : { A: lo, B: hi };
+  }
   // ---------------------------------------------------------------- plan vers une cible
   function startLevel(m, s) { return TREE[m].gen === 1 ? s.capLevel : 1; }
-  /* Production d'une cible en espérance.
-     need[X] = nombre de X à réussir. Pour X (parents A, B) : tentatives = need / p, chacune utilise un A et un B.
-     Chaque parent utilisé devient stérile. Deux stériles de la MÊME génération donnent un clone fertile : avec U usages
-     d'une génération, on récupère environ (U − 1) / 2 clones (un stérile seul ne se clone pas) — prudent pour les petits nombres.
-     Un bébé raté de la couleur d'un parent le remplace (récupération). Les générations sont traitées de la plus haute à la plus basse :
-     quand on arrive à une génération, tous ses usages sont connus. */
-  function cloneCredit(U, s) { return !s.clone || U <= 1 ? 0 : (U - 1) / (2 * U); }
+  // places d'enclos : 6 enclos au maximum, 10 montures chacun (guide de l'éleveur 2026)
+  function placesOf(s) { return clamp(Math.round(s.enclos || 1), 1, 6) * clamp(Math.round(s.perEnclos || 10), 1, 10); }
+  /* Production d'une cible en espérance, de la gén. 10 vers les captures.
+     need[X] = nombre de X à réussir. Pour X (parents A, B) au niveau L : chance p ; tentatives = need / p (2 parents préparés chacune).
+     Parents NEUFS à fournir : freshFor(need, p, k) — k = tours de recroisement des ratés et des clones à cette étape
+     (1 tour = tout en parallèle, sans recroiser) —, moitié A, moitié B, au moins 1 de chaque.
+     Chaque tour en plus allonge l'étape d'une préparation : bébés ratés et clones repartent du niveau 1. */
+  function nodeStatic(X, pol, s) {
+    var c = s.__nc; if (!c) { c = {}; Object.defineProperty(s, '__nc', { value: c, enumerable: false }); }
+    var key = X + '|' + pol.L + '|' + (pol.opti ? 1 : 0) + '|' + (pol.k || 1);
+    if (c[key]) return c[key];
+    var A = TREE[X].p[0], B = TREE[X].p[1], rec = recovery(A, B, pol.L, pol.L, pol.opti, s), p = rec.p;
+    var k = poolParams(p, s).d <= 0 ? 1 : Math.max(1, pol.k || 1);
+    var sp = freshSplit(1, p, k, A, B, s);
+    return (c[key] = { A: A, B: B, p: p, rA: rec.rA, rB: rec.rB, k: k, shareA: sp.A, shareB: sp.B,
+      lvA: levelCost(startLevel(A, s), pol.L, s), lvB: levelCost(startLevel(B, s), pol.L, s),
+      prepA: prepHours(startLevel(A, s), pol.L, s), prepB: prepHours(startLevel(B, s), pol.L, s), prep1: prepHours(1, pol.L, s),
+      fs: failStats(A, B, pol.L, pol.opti, s) });
+  }
   function plan(target, policy, s) {
     var need = {}; need[target] = s.topNeed || 1;
-    var uses = {}, recov = {}, genUses = {}, credit = {};
+    var uses = {};
     var order = NAMES.slice().sort(function (a, b) { return TREE[b].gen - TREE[a].gen || a.localeCompare(b); });
     var nodes = [];
     var kamas = 0, fuelK = 0, levK = 0, optiK = 0, placeH = 0, genetons = 0, optiCount = {}, missing = [];
     var fc = fertCost(s);
-    if (fc === null) missing.push('prix des carburants de fécondité (' + s.fertFam + ')');
-    function settle(Y) {   // besoin net d'une couleur = usages − clones récupérés − ratés de sa couleur
-      if (Y === target) return;
-      var g = TREE[Y].gen;
-      if (credit[g] === undefined) credit[g] = cloneCredit(genUses[g] || 0, s);
-      need[Y] = Math.max(0, (uses[Y] || 0) * (1 - credit[g]) - (s.recup ? (recov[Y] || 0) : 0));
-    }
+    if (fc === null) missing.push('prix des carburants Amour, Endurance, Maturité et Sérénité (' + s.fertFam + ')');
     order.forEach(function (X) {
-      settle(X);
+      if (X !== target) need[X] = uses[X] || 0;
       if (!need[X] || TREE[X].gen === 1) return;
-      var g = TREE[X].gen, pol = policy[g] || { L: 1, opti: false };
-      var A = TREE[X].p[0], B = TREE[X].p[1];
-      var rec = recovery(A, B, pol.L, pol.L, pol.opti, s), p = rec.p, att = need[X] / p;
-      uses[A] = (uses[A] || 0) + att; uses[B] = (uses[B] || 0) + att;
-      genUses[TREE[A].gen] = (genUses[TREE[A].gen] || 0) + att; genUses[TREE[B].gen] = (genUses[TREE[B].gen] || 0) + att;
-      recov[A] = (recov[A] || 0) + att * (1 - p) * rec.rA; recov[B] = (recov[B] || 0) + att * (1 - p) * rec.rB;
-      var consA = att, consB = att;   // remplacé plus bas, une fois les clones de chaque génération connus
-      // XP : un parent sur deux est un clone ; s'il garde son niveau, il n'a plus que sa fécondité à refaire
-      var keep = s.cloneKeepsLevel ? 0.5 : 0;
-      var lvA = levelCost(startLevel(A, s), pol.L, s), lvB = levelCost(startLevel(B, s), pol.L, s);
+      var g = TREE[X].gen, pol = policy[g] || { L: 1, opti: false, k: 1 };
+      var ns = nodeStatic(X, pol, s), A = ns.A, B = ns.B, p = ns.p, att = need[X] / p, k = ns.k;
+      var fA = Math.max(1, need[X] * ns.shareA), fB = Math.max(1, need[X] * ns.shareB);
+      uses[A] = (uses[A] || 0) + fA; uses[B] = (uses[B] || 0) + fB;
+      var lvA = ns.lvA, lvB = ns.lvB;
       if (lvA === null || lvB === null) { if (missing.indexOf('prix de l’XP (' + s.xpFam + ')') < 0) missing.push('prix de l’XP (' + s.xpFam + ')'); lvA = lvA || 0; lvB = lvB || 0; }
-      var levelK = att * (1 - keep) * (lvA + lvB);
+      var levelK = att * (lvA + lvB);
       var fert = att * 2 * (fc || 0);
       var oc = 0;
       if (pol.opti) {
@@ -220,49 +271,46 @@
         if (unit === null) { if (missing.indexOf('prix de l’Optimakina gén. ' + g) < 0) missing.push('prix de l’Optimakina gén. ' + g); unit = 0; }
         oc = att * unit; optiCount[g] = (optiCount[g] || 0) + att;
       }
-      var prepA = prepHours(startLevel(A, s), pol.L, s), prepB = prepHours(startLevel(B, s), pol.L, s), f = fertHours(s);
-      var hours = att * ((prepA + prepB) - keep * (prepA - f + prepB - f));
+      var prepA = ns.prepA, prepB = ns.prepB, prep1 = ns.prep1;
+      var hours = att * (prepA + prepB);
       placeH += hours; levK += levelK; fuelK += fert; optiK += oc;
-      genetons += need[X] * (GENETONS[TREE[A].gen] + GENETONS[TREE[B].gen]);
-      nodes.push({ name: X, gen: g, A: A, B: B, L: pol.L, opti: !!pol.opti, p: p, rA: rec.rA, rB: rec.rB, need: need[X], att: att,
-                   consA: consA, consB: consB, levelK: levelK, fertK: fert, optiK: oc, hours: hours, prepA: prepA, prepB: prepB });
-    });
-    // consommation nette de chaque parent par nœud (sert à valoriser un parent perdu)
-    nodes.forEach(function (n) {
-      var r = s.recup;
-      n.consA = Math.max(0, n.att * (1 - (credit[TREE[n.A].gen] || 0)) - (r ? n.att * (1 - n.p) * n.rA : 0));
-      n.consB = Math.max(0, n.att * (1 - (credit[TREE[n.B].gen] || 0)) - (r ? n.att * (1 - n.p) * n.rB : 0));
+      // génétons : selon la génération des DEUX parents ; au 1er tour deux neufs, ensuite un parent recyclé (raté ou clone)
+      var fs = ns.fs, G = GENETONS[TREE[A].gen] + GENETONS[TREE[B].gen];
+      var first = Math.min(need[X], p * Math.min(fA, fB));
+      genetons += first * G + (need[X] - first) * (s.reuse !== false ? G / 2 + fs.genF : G);
+      nodes.push({ name: X, gen: g, A: A, B: B, L: pol.L, opti: !!pol.opti, k: k, p: p, pRe: fs.pRe, rA: ns.rA, rB: ns.rB, need: need[X], att: att,
+                   fresh: fA + fB, consA: fA, consB: fB, levelK: levelK, fertK: fert, optiK: oc, hours: hours, prepA: prepA, prepB: prepB, prep1: prep1 });
     });
     var caps = {}, capTot = 0;
     GEN1.forEach(function (g) { if (need[g]) { caps[g] = need[g]; capTot += need[g]; } });
     var filetK = capTot * (1 + s.capMargin) * (num(s.filet) || 0);
     kamas = fuelK + levK + optiK + filetK;
-    // chemin critique : chaque génération attend que ses parents soient prêts (fécondité + XP)
-    var crit = {};
+    // chemin critique : chaque étape attend ses parents (fécondité + XP), puis ses tours de recroisement
+    var crit = {}, byName = {};
+    nodes.forEach(function (n) { byName[n.name] = n; });
     function cp(m) {
       if (crit[m] !== undefined) return crit[m];
       if (TREE[m].gen === 1) return (crit[m] = 0);
-      var nd = nodes.filter(function (n) { return n.name === m; })[0];
-      var A = TREE[m].p[0], B = TREE[m].p[1];
+      var nd = byName[m], A = TREE[m].p[0], B = TREE[m].p[1];
       var pa = nd ? nd.prepA : prepHours(startLevel(A, s), 1, s), pb = nd ? nd.prepB : prepHours(startLevel(B, s), 1, s);
-      return (crit[m] = Math.max(cp(A) + pa, cp(B) + pb));
+      return (crit[m] = Math.max(cp(A) + pa, cp(B) + pb) + (nd ? (nd.k - 1) * nd.prep1 : 0));
     }
-    var critH = cp(target), places = s.enclos * s.perEnclos;
-    /* Ratés en série : en haut de l'arbre tu n'as qu'un ou deux parents ; un raté se rejoue au cycle suivant.
-       On suit le chemin critique depuis la cible et, tant que le besoin est inférieur à 2, on ajoute (1/p − 1) cycles. */
-    var seqH = 0, m = target;
-    while (TREE[m].gen > 1) {
-      var nd = nodes.filter(function (x) { return x.name === m; })[0];
-      if (!nd) break;
-      if (nd.need < 2) seqH += (1 / nd.p - 1) * Math.max(nd.prepA, nd.prepB);
-      m = (crit[nd.A] + nd.prepA >= crit[nd.B] + nd.prepB) ? nd.A : nd.B;
+    var crit0 = {};
+    function cp0(m) {   // sans les tours de recroisement : tout réussit du premier coup
+      if (crit0[m] !== undefined) return crit0[m];
+      if (TREE[m].gen === 1) return (crit0[m] = 0);
+      var nd = byName[m], A = TREE[m].p[0], B = TREE[m].p[1];
+      var pa = nd ? nd.prepA : prepHours(startLevel(A, s), 1, s), pb = nd ? nd.prepB : prepHours(startLevel(B, s), 1, s);
+      return (crit0[m] = Math.max(cp0(A) + pa, cp0(B) + pb));
     }
-    var days = Math.max(critH + seqH, placeH / places) / 24;
+    var critH = cp(target), places = placesOf(s);
+    var days = Math.max(critH, placeH / places) / 24;
     nodes.sort(function (a, b) { return a.gen - b.gen || a.name.localeCompare(b.name); });
-    return { target: target, nodes: nodes, need: need, credit: credit, captures: caps, capTot: capTot, capWithMargin: capTot * (1 + s.capMargin),
-             kamas: kamas, fuelK: fuelK, levK: levK, optiK: optiK, filetK: filetK, placeH: placeH, critH: critH, seqH: seqH, days: days,
-             capDays: placeH / places / 24, bestDays: critH / 24,
-             genetons: genetons, optiCount: optiCount, missing: missing, places: places };
+    return { target: target, nodes: nodes, need: need, credit: {}, captures: caps, capTot: capTot, capWithMargin: capTot * (1 + s.capMargin),
+             kamas: kamas, fuelK: fuelK, levK: levK, optiK: optiK, filetK: filetK, placeH: placeH, critH: critH, seqH: 0, days: days,
+             capDays: placeH / places / 24, bestDays: cp0(target) / 24,
+             genetons: genetons, optiCount: optiCount, missing: missing, places: places, captureMin: s.captureMin,
+             value: (num(s.neurone) || 0) * TREE[target].gen * (s.topNeed || 1) * (1 - (num(s.tax) || 0)) + genetons * genetonValueCached(s) };
   }
   // coût unitaire (kamas, heures-places) de chaque couleur du plan : sert à valoriser un parent perdu
   function unitCosts(pl, s) {
@@ -279,7 +327,15 @@
     return u;
   }
   // les génétons ne comptent PAS dans l'objectif : sinon rater plus souvent (donc réussir plus d'étapes) paraîtrait rentable
-  function objectiveValue(pl, obj) { return obj === 'kamas' ? pl.kamas : pl.days; }
+  /* Objectif « temps » : jours d'élevage + ton propre temps de capture (s.captureMin minutes par capture, 5 par défaut),
+     pour ne pas gagner quelques heures au prix de centaines de captures. */
+  function timeOf(pl) { return pl.days + pl.capTot * (num(pl.captureMin) === null ? 5 : pl.captureMin) / 1440; }
+  /* « renta » : kamas gagnés par jour = (valeur obtenue − kamas dépensés) ÷ (jours + temps de capture). */
+  function objectiveValue(pl, obj) {
+    if (obj === 'kamas') return pl.kamas;
+    if (obj === 'renta') return -(pl.value - pl.kamas) / Math.max(timeOf(pl), 1e-9);
+    return timeOf(pl);
+  }
   function better(a, b, obj) {
     var va = objectiveValue(a, obj), vb = objectiveValue(b, obj);
     if (va < vb - 1e-9) return true;
@@ -287,22 +343,23 @@
     return obj === 'kamas' ? a.days < b.days - 1e-9 : a.kamas < b.kamas - 1e-9;
   }
   var LEVELS = [1, 20, 40, 60, 80, 100, 120, 134, 150, 167, 184, 200];
+  var TOURS = [1, 2, 3, 5];   // tours de recroisement des ratés et des clones à une étape (1 = tout en parallèle)
   function gensOf(target) {
     var gens = [];
     (function walk(m) { if (TREE[m].gen > 1 && gens.indexOf(TREE[m].gen) < 0) gens.push(TREE[m].gen); TREE[m].p.forEach(walk); })(target);
     return gens.sort(function (a, b) { return a - b; });
   }
-  /* Recherche du meilleur niveau et de l'Optimakina par génération : on part des 24 stratégies uniformes,
+  /* Recherche du meilleur niveau, de l'Optimakina et du nombre de tours par génération : on part des stratégies uniformes,
      puis on améliore les 3 meilleures génération par génération (descente coordonnée) jusqu'à stabilité. */
   function optimize(target, s, obj, opts) {
     opts = opts || {};
-    var gens = gensOf(target), allowOpti = opts.allowOpti !== false;
+    var gens = gensOf(target), allowOpti = opts.allowOpti !== false, tours = opts.tours || TOURS;
     var options = [];
-    LEVELS.forEach(function (L) { [false, true].forEach(function (o) { if (!o || allowOpti) options.push({ L: L, opti: o }); }); });
-    var starts = options.map(function (op) {
-      var pol = {}; gens.forEach(function (g) { pol[g] = { L: op.L, opti: op.opti && optiCost(g, s) !== null }; });
+    LEVELS.forEach(function (L) { [false, true].forEach(function (o) { if (!o || allowOpti) tours.forEach(function (k) { options.push({ L: L, opti: o, k: k }); }); }); });
+    var starts = options.filter(function (op) { return op.k <= 3; }).map(function (op) {
+      var pol = {}; gens.forEach(function (g) { pol[g] = { L: op.L, opti: op.opti && optiCost(g, s) !== null, k: op.k }; });
       return { pol: pol, pl: plan(target, pol, s) };
-    }).sort(function (a, b) { return better(a.pl, b.pl, obj) ? -1 : (better(b.pl, a.pl, obj) ? 1 : 0); }).slice(0, 3);
+    }).sort(function (a, b) { return better(a.pl, b.pl, obj) ? -1 : (better(b.pl, a.pl, obj) ? 1 : 0); }).slice(0, opts.starts || 3);
     var champion = null;
     starts.forEach(function (st) {
       var pol = st.pol, best = st.pl;
@@ -311,7 +368,7 @@
         gens.forEach(function (g) {
           options.forEach(function (op) {
             if (op.opti && optiCost(g, s) === null) return;
-            var trial = JSON.parse(JSON.stringify(pol)); trial[g] = { L: op.L, opti: op.opti };
+            var trial = JSON.parse(JSON.stringify(pol)); trial[g] = { L: op.L, opti: op.opti, k: op.k };
             var pl = plan(target, trial, s);
             if (better(pl, best, obj)) { pol = trial; best = pl; changed = true; }
           });
@@ -323,50 +380,51 @@
     champion.gens = gens;
     return champion;
   }
-  function uniformPolicy(target, L, opti) {
+  function uniformPolicy(target, L, opti, k) {
     var pol = {};
-    (function walk(m) { if (TREE[m].gen > 1) pol[TREE[m].gen] = { L: L, opti: opti }; TREE[m].p.forEach(walk); })(target);
+    (function walk(m) { if (TREE[m].gen > 1) pol[TREE[m].gen] = { L: L, opti: opti, k: k || 1 }; TREE[m].p.forEach(walk); })(target);
     return pol;
   }
 
-  // ---------------------------------------------------------------- analyse « à quel niveau accoupler ? » (méthode de la vidéo)
-  function levelAnalysis(X, s, values, levels, credits) {
+  // ---------------------------------------------------------------- analyse « à quel niveau accoupler ? » (méthode de la vidéo, en temps)
+  /* Pour une étape et chaque niveau : la chance, le temps de préparation (XP de 1 au niveau + fécondité), les tentatives,
+     et le temps d'enclos par réussite, en comptant les parents neufs consommés à leur coût de production (values).
+     k = tours de recroisement de l'étape (ceux du plan). */
+  function levelAnalysis(X, s, values, levels, k) {
     var A = TREE[X].p[0], B = TREE[X].p[1], g = TREE[X].gen;
-    var cA = 1 - (credits ? (credits[TREE[A].gen] || 0) : (s.clone ? 0.5 : 0)), cB = 1 - (credits ? (credits[TREE[B].gen] || 0) : (s.clone ? 0.5 : 0));
     var va = values[A] || { kamas: 0, hours: 0 }, vb = values[B] || { kamas: 0, hours: 0 };
     var fc = fertCost(s) || 0, oc = optiCost(g, s), rows = [];
     (levels || LEVELS).forEach(function (L) {
       [false, true].forEach(function (o) {
-        var rec = recovery(A, B, L, L, o, s), p = rec.p, att = 1 / p;
-        var consA = att * Math.max(0, cA - (s.recup ? (1 - p) * rec.rA : 0)), consB = att * Math.max(0, cB - (s.recup ? (1 - p) * rec.rB : 0));
+        var p = recovery(A, B, L, L, o, s).p, att = 1 / p, sp = freshSplit(1, p, k || 1, A, B, s), consA = sp.A, consB = sp.B;
         var lev = (levelCost(startLevel(A, s), L, s) || 0) + (levelCost(startLevel(B, s), L, s) || 0);
-        var keep = s.cloneKeepsLevel ? 0.5 : 0;
-        var perAtt = (1 - keep) * lev + 2 * fc + (o ? (oc || 0) : 0);
-        var kam = att * perAtt + consA * va.kamas + consB * vb.kamas;
-        var prepA = prepHours(startLevel(A, s), L, s), prepB = prepHours(startLevel(B, s), L, s), f = fertHours(s);
-        var hours = att * (prepA + prepB - keep * (prepA - f + prepB - f)) + consA * va.hours + consB * vb.hours;
-        rows.push({ L: L, opti: o, p: p, att: att, rA: rec.rA, rB: rec.rB, consumed: consA + consB, xpH: levelHours(1, L, s),
-                    levK: lev, kamas: kam, placeH: hours, waitH: Math.max(prepA, prepB), seqDays: att * Math.max(prepA, prepB) / 24,
-                    optiMissing: o && oc === null });
+        var kam = att * (lev + 2 * fc + (o ? (oc || 0) : 0)) + consA * va.kamas + consB * vb.kamas;
+        var prepA = prepHours(startLevel(A, s), L, s), prepB = prepHours(startLevel(B, s), L, s);
+        var own = att * (prepA + prepB);
+        rows.push({ L: L, opti: o, p: p, att: att, consumed: consA + consB, xpH: levelHours(1, L, s), levK: lev, kamas: kam,
+                    ownH: own, placeH: own + consA * va.hours + consB * vb.hours, waitH: Math.max(prepA, prepB),
+                    seqDays: att * Math.max(prepA, prepB) / 24, optiMissing: o && oc === null });
       });
     });
-    var best = function (k, o) {
+    var best = function (key, o) {
       var r = rows.filter(function (x) { return x.opti === o && !x.optiMissing; });
-      return r.reduce(function (m, x) { return x[k] < m[k] ? x : m; }, r[0]);
+      return r.reduce(function (m, x) { return x[key] < m[key] ? x : m; }, r[0]);
     };
     return { X: X, A: A, B: B, gen: g, rows: rows, bestKamas: [best('kamas', false), best('kamas', true)], bestHours: [best('placeH', false), best('placeH', true)] };
   }
 
   // ---------------------------------------------------------------- dernier croisement (gén. 10)
   function finalCross(X, L, opti, s) {
-    var A = TREE[X].p[0], B = TREE[X].p[1], rec = recovery(A, B, L, L, opti, s), p = rec.p, c = s.clone ? 0.5 : 1;
+    var A = TREE[X].p[0], B = TREE[X].p[1], rec = recovery(A, B, L, L, opti, s), p = rec.p;
     var o = rec.out, fail = 1 - p, back9 = 0;
     o.items.forEach(function (i) { if (!i.target && i.gen === 9) back9 += i.p; });
     var n9 = (TREE[A].gen === 9 ? 1 : 0) + (TREE[B].gen === 9 ? 1 : 0);
-    // gén. 9 consommées par gén. 10 réussie : chaque gén. 9 utilisée vaut 0,5 (clonage) ; un raté gén. 9 en rend une
-    var used9 = (1 / p) * Math.max(0, n9 * c - back9);
-    var gen = GENETONS[TREE[A].gen] + GENETONS[TREE[B].gen];
-    return { X: X, A: A, B: B, p: p, back9: fail > 0 ? back9 / fail : 0, back9abs: back9, used9: used9, genetons: gen,
+    // gén. 9 neuves par gén. 10 réussie, en recroisant ratés et clones jusqu'au bout (un raté garde la gén. 9 dans son arbre)
+    var sp = freshSplit(1, p, 50, A, B, s), used9 = (TREE[A].gen === 9 ? sp.A : 0) + (TREE[B].gen === 9 ? sp.B : 0);
+    var gen = GENETONS[TREE[A].gen] + GENETONS[TREE[B].gen], fs = failStats(A, B, L, opti, s);
+    var other = TREE[A].gen === 9 && TREE[B].gen !== 9 ? B : A;
+    return { X: X, A: A, B: B, p: p, pRe: fs.pRe, back9: fail > 0 ? back9 / fail : 0, back9abs: back9, used9: used9, genetons: gen,
+             genRe: GENETONS[TREE[other].gen] + fs.genF,
              genPer9: used9 > 0 ? gen / used9 : Infinity, items: o.items };
   }
 
@@ -390,6 +448,10 @@
     });
     return rows.sort(function (a, b) { return b.perGeneton - a.perGeneton; });
   }
+  function genetonValueCached(s) {
+    var c = s.__gv; if (c === undefined) { c = genetonValue(s); Object.defineProperty(s, '__gv', { value: c, enumerable: false }); }
+    return c;
+  }
   function genetonValue(s) {
     var o = num(s.genetonValue); if (o !== null) return o;
     var r = scrollValues(s); return r.length ? r[0].perGeneton : 0;
@@ -406,7 +468,7 @@
         var t = JSON.parse(JSON.stringify(s)); t.xpFam = xf; t.fertFam = ff;
         var lc = refillCostPer1000(xf, t.refillH, t.fuel['Expérience']), fc = fertCost(t);
         if (lc === null || fc === null) { rows.push({ xpFam: xf, fertFam: ff, missing: true }); return; }
-        var r = optimize(target, t, obj), pl = r.plan, v = resultValue(pl, t);
+        var r = optimize(target, t, obj, { starts: 1, tours: [1, 2, 3], allowOpti: s.allowOpti !== false }), pl = r.plan, v = resultValue(pl, t);
         rows.push({ xpFam: xf, fertFam: ff, policy: r.policy, plan: pl, days: pl.days, kamas: pl.kamas, fuel: pl.fuelK + pl.levK,
                     value: v.total, valueNeur: v.neurones, valueGen: v.genetons, profit: v.total - pl.kamas,
                     perDay: (v.total - pl.kamas) / Math.max(pl.days, 1e-9) });
@@ -490,6 +552,29 @@
     return best;
   }
 
+  /* Rentabilité en TEMPS d'une dragodinde déjà produite : ce que rapporte en plus chaque jour de place d'enclos passé à la monter,
+     par rapport au mieux immédiat (l'extraire, ou la briser tout de suite au niveau 1). Une monture mise en enclos y reste au moins
+     jusqu'à ta connexion suivante (s.refillH) : les premiers niveaux, presque instantanés, ne divisent pas par zéro. */
+  function placeHours(h, s) { return Math.max(h, num(s.refillH) || 12); }
+  function instantBest(X, s) { var r = brisageDD(X, 1, s); return r.missing ? 0 : Math.max(0, r.gain); }
+  function bestBrisageTime(X, s) {
+    var base = instantBest(X, s), best = null;
+    for (var L = 2; L <= 200; L += (L < 10 ? 1 : 5)) {
+      var r = brisageDD(X, L, s); if (r.missing) return null;
+      var v = (r.gain - base) * 24 / placeHours(r.hours, s);
+      if (!best || v > best.perPlaceDay) best = { L: L, gain: r.gain, hours: r.hours, perPlaceDay: v };
+    }
+    return { best: best, base: base };
+  }
+  // vente au niveau 200, à TON prix (vide = cette monture ne se vend pas)
+  function saleDD(X, s) {
+    var pr = num((s.sell200 || {})[X]); if (pr === null) return null;
+    var tax = num(s.tax) || 0, xp = levelCost(1, 200, s) || 0, hours = levelHours(1, 200, s);
+    var extract = TREE[X].gen >= 2 ? TREE[X].gen * (num(s.neurone) || 0) * (1 - tax) : 0;
+    var gain = pr * (1 - tax) - xp - extract, base = instantBest(X, s);
+    return { price: pr, gain: gain, hours: hours, perPlaceDay: (gain - base) * 24 / placeHours(hours, s) };
+  }
+
   // ---------------------------------------------------------------- brisage Muldo / Volkorne
   // « jeu » : (3 × bonus × poids × niveau de la monture / 200 + 1) × taux / poids de la rune ; « video » : formule de la vidéo
   function brisageRunes(L, b) {
@@ -507,11 +592,53 @@
              hours: hours, perHour: hours > 0 ? profit / hours : null };
   }
 
+  // ---------------------------------------------------------------- calculateur par cible (comme muldo-calculator, pour les dragodindes)
+  /* Tu pars de `mult` lots de captures : un lot = une capture par feuille gén. 1 de l'arbre de la cible
+     (une branche indépendante par apparition d'une couleur dans l'arbre, comme muldo-calculator).
+     À chaque étape : paires = min(A, B) ; la réserve (2 × paires) se croise pendant k tours (ratés recroisés et clones selon
+     tes réglages ; 1 tour = un seul accouplement par paire) ; bébés attendus = réussites. Tout est proportionnel au nombre de lots.
+     Durée : une étape attend ses deux parents, puis k préparations (XP au niveau choisi + fécondité). */
+  function cascade(target, s, o) {
+    o = o || {};
+    var mult = Math.max(0, num(o.mult) === null ? 1 : +o.mult), steps = {}, order = [], leaves = {};
+    function par(g) {
+      var d = o.def || { L: 1, opti: false, k: 1 }, x = (o.perGen && o.perGen[g]) || {};
+      return { L: clamp(Math.round(num(x.L) === null ? d.L : x.L), 1, 200), opti: x.opti == null ? !!d.opti : !!x.opti,
+               k: Math.max(1, Math.round(num(x.k) === null ? (d.k || 1) : x.k)) };
+    }
+    function walk(m) {   // { n : montures obtenues, t : heures avant qu'elles soient prêtes }
+      if (TREE[m].gen === 1) { leaves[m] = (leaves[m] || 0) + mult; return { n: mult, t: 0 }; }
+      var A = TREE[m].p[0], B = TREE[m].p[1], a = walk(A), b = walk(B), g = TREE[m].gen, pr = par(g);
+      var p = recovery(A, B, pr.L, pr.L, pr.opti, s).p, pp = poolParams(p, s), k = pp.d <= 0 ? 1 : pr.k;
+      var pairs = Math.min(a.n, b.n), babies, gA = TREE[A].gen, gB = TREE[B].gen;
+      if (s.reuse !== false && gA !== gB && pp.d > 0) {   // étape déséquilibrée : chaînes du côté avancé, un neuf par tentative de l'autre côté
+        var nHi = gA > gB ? a.n : b.n, nLo = gA > gB ? b.n : a.n;
+        babies = Math.min(nHi * (1 - Math.pow(1 - p, k)), nLo / (1 - (s.clone ? 0.5 * (k - 1) / k : 0)) * p);
+      } else babies = 2 * pairs * pp.y * (1 - Math.pow(pp.d, k));
+      var prepA = prepHours(startLevel(A, s), pr.L, s), prepB = prepHours(startLevel(B, s), pr.L, s), prep1 = prepHours(1, pr.L, s);
+      var t = Math.max(a.t + prepA, b.t + prepB) + (k - 1) * prep1;
+      if (steps[m]) steps[m].groups++;
+      else {
+        order.push(m);
+        steps[m] = { name: m, gen: g, A: A, B: B, nA: a.n, nB: b.n, pairs: pairs, L: pr.L, opti: pr.opti, k: k, p: p,
+                     pRe: failStats(A, B, pr.L, pr.opti, s).pRe, attempts: babies / p, babies: babies, firstRound: pairs * p,
+                     lost: Math.abs(a.n - b.n), t: t, prep: Math.max(prepA, prepB), groups: 1 };
+      }
+      return { n: babies, t: t };
+    }
+    var r = walk(target), list = order.map(function (m) { return steps[m]; });
+    var capTot = Object.keys(leaves).reduce(function (x, c) { return x + leaves[c]; }, 0);
+    return { target: target, steps: list, babies: r.n, hours: r.t, captures: leaves, capTot: capTot, mult: mult,
+             multFor1: mult > 0 && r.n > 0 ? mult / r.n : null, pAtLeastOne: 1 - Math.exp(-r.n) };
+  }
+
   var API = { TREE: TREE, XP: XP, NAMES: NAMES, GEN1: GEN1, GENETONS: GENETONS, FAMILIES: FAMILIES, CAPS: CAPS, RATE: RATE, JAUGES: JAUGES,
               OPTI: OPTI, LEVELS: LEVELS, recipe: recipe, pTarget: pTarget, outcomes: outcomes, recovery: recovery, drain: drain,
               xpPerHour: xpPerHour, refillCostPer1000: refillCostPer1000, xpBetween: xpBetween, levelHours: levelHours, levelCost: levelCost,
               fertHours: fertHours, fertCost: fertCost, cheapestFrom: cheapestFrom, baseDeposit: baseDeposit, depositTotal: depositTotal, prepHours: prepHours, optiCost: optiCost, optiCraft: optiCraft, plan: plan, unitCosts: unitCosts,
               optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel, bestPerSimple: bestPerSimple,
-              SCROLLS: SCROLLS, SCROLL_STATS: SCROLL_STATS, scrollName: scrollName, scrollValues: scrollValues, genetonValue: genetonValue };
+              SCROLLS: SCROLLS, SCROLL_STATS: SCROLL_STATS, scrollName: scrollName, scrollValues: scrollValues, genetonValue: genetonValue,
+              TOURS: TOURS, canon: canon, outcomesInd: outcomesInd, failStats: failStats, poolParams: poolParams, freshFor: freshFor, placesOf: placesOf,
+              cascade: cascade, freshSplit: freshSplit, bestBrisageTime: bestBrisageTime, saleDD: saleDD, instantBest: instantBest };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);

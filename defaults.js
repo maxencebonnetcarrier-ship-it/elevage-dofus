@@ -2,7 +2,7 @@
    Ombre sinon Kourial, novembre 2026) — coût en kamas pour 1 000 points de jauge, recette la moins chère de chaque famille.
    null = aucun prix connu (un ingrédient sans relevé). Tout se modifie dans l'onglet « Prix et réglages ». */
 var DD_DEFAULTS = {
-  version: 5,
+  version: 6,
   target: 'Prune et Rousse',
   objective: 'jours',
   enclos: 2,
@@ -11,10 +11,10 @@ var DD_DEFAULTS = {
   xpFam: 'Extrait',
   fertFam: 'Extrait',
   capLevel: 1,
-  clone: true,
-  parentsOnly: false,   // génétique : false = parents + grands-parents (guides 2026), true = parents seuls (hypothèse à tester)
-  recup: true,
-  cloneKeepsLevel: false,
+  clone: true,          // 2 stériles de même génération → 1 fertile ; le clone repart au niveau 1 (constaté en jeu)
+  reuse: true,          // recroiser les bébés ratés : ils gardent leurs deux parents dans leur arbre (génétique parents + grands-parents)
+  allowOpti: true,
+  captureMin: 5,        // ton temps par capture (minutes), compté dans l'objectif « aller le plus vite »
   optiBonus: 20,
   alma: 0,
   safety: 'moyenne',
@@ -47,6 +47,10 @@ var DD_DEFAULTS = {
     'Bourgeon explosif de Damadrya': 0, 'Laine du Royalmouth': 0, 'Pistil du Tynril': 0, "Mèche Rebelle d'Hell Mina": 0
   },
   optiBuy: {},
+  // prix de vente d'une dragodinde au niveau 200, à TON prix (vide = elle ne se vend pas) : { 'Prune': 500000, ... }
+  sell200: {},
+  // calculateur par dragodinde (comme muldo-calculator) : lots de captures, niveau, Optimakina, tours de recroisement
+  calc: { target: 'Prune et Rousse', mult: 1, L: 40, opti: true, k: 2, mode: 'simple', perGen: {} },
   // carburants : 0 par défaut (tu les fabriques) ; mets un prix pour voir ce qu'ils coûtent. null = recette inexistante.
   fuel: {
     'Endurance': [0, 0, 0, 0],
@@ -103,7 +107,8 @@ var DD_DEFAULTS = {
     model: 'jeu',
     coef: 50,
     stat: 1,
-    capturesPerDay: 40
+    capturesPerDay: 40,
+    sell200: null   // prix de vente d'un muldo / volkorne niveau 200 (ton prix) ; vide = pas de vente
   }
 };
 if (typeof module !== 'undefined') module.exports = DD_DEFAULTS;

@@ -35,13 +35,20 @@ try {
   const before = await card();
   check('page chargée, 5 cartes', before.length === 5, before);
   const setSel = (k, v) => ev(`(() => { const e = document.querySelector('[data-k="${k}"]'); e.value = ${JSON.stringify(String(v))}; e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-  // 1. objectif « dépenser le moins » : la durée doit s'allonger et le budget baisser
+  // 0. en-tête : 6 enclos au plus, aucun « carburant fécondité »
+  const hdr = await ev(`document.querySelectorAll('[data-k="enclos"] option').length + '|' + document.getElementById('global').textContent`);
+  check('en-tête : 6 enclos au plus, carburant Amour · Endurance · Maturité (pas de « carburant fécondité »)', hdr.startsWith('6|') && hdr.includes('Carburant Amour · Endurance · Maturité') && !/carburant f[ée]condit[ée]/i.test(hdr), hdr.slice(0, 120));
+  // 1. objectif « dépenser le moins » : la durée doit s'allonger et les Optimakinas disparaître
   await setSel('objective', 'kamas'); await sleep(1500);
   const cheap = await card();
-  const num = s => +s.replace(/[^\d,]/g, '').replace(',', '.');
-  const dur = a => num(a.find(x => x.startsWith('Durée')).split('=')[1]), bud = a => num(a.find(x => x.startsWith('Budget')).split('=')[1]);
-  check('« dépenser le moins » : budget plus bas', bud(cheap) < bud(before), [bud(before), bud(cheap)]);
+  const num = s => +s.replace(/[^\d,\-−]/g, '').replace('−', '-').replace(',', '.');
+  const val = (a, k) => num(a.find(x => x.startsWith(k)).split('=')[1]);
+  const dur = a => val(a, 'Durée');
+  check('« dépenser le moins » : moins d’Optimakinas', val(cheap, 'Optimakinas') < val(before, 'Optimakinas'), [val(before, 'Optimakinas'), val(cheap, 'Optimakinas')]);
   check('« dépenser le moins » : durée plus longue', dur(cheap) > dur(before), [dur(before), dur(cheap)]);
+  await setSel('objective', 'renta'); await sleep(1800);
+  const renta = await card();
+  check('« gagner le plus par jour » : plus de kamas par jour qu’« aller le plus vite »', val(renta, 'Kamas gagnés par jour') >= val(before, 'Kamas gagnés par jour'), [val(before, 'Kamas gagnés par jour'), val(renta, 'Kamas gagnés par jour')]);
   // 2. un enclos de plus ne doit jamais allonger le plan
   await setSel('objective', 'jours'); await sleep(1200);
   const d2 = dur(await card()); await setSel('enclos', 4); await sleep(1500); const d4 = dur(await card());
@@ -75,7 +82,11 @@ try {
   check('fusion : Vi à fusionner en Ra, Ine à vendre en simples', fz.includes('fusionner en Ra Vi') && fz.includes('vendre les simples'), fz);
   const gaPme = await ev(`[...document.querySelectorAll('main [data-k="runePrices.Rune Ga Pme"]')].filter(e => !e.closest('#mes-prix')).map(e => e.value).join(',')`);
   check('muldo : le prix de la Ga PM vient de « Mes prix » (14 139)', gaPme.length > 0 && gaPme.split(',').every(v => v === '14139'), gaPme);
-  for (const t of ['objectif', 'chemin', 'niveau', 'renta', 'final', 'prix', 'brisage', 'regles']) {
+  // 5 bis. vente au niveau 200 à ton prix (brisage des dragodindes)
+  await ev(`(() => { const e = document.querySelector('[data-k="sell200.Prune"]'); e.value = '900000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1500);
+  const sale = await ev(`(() => { const e = document.querySelector('[data-k="sell200.Prune"]'); return e.value + '|' + e.closest('td').textContent; })()`);
+  check('vente niv. 200 de la Prune à 900 000 : kamas en plus par jour de place', sale.startsWith('900000|') && sale.includes('place / jour'), sale);
+  for (const t of ['objectif', 'calcul', 'chemin', 'niveau', 'renta', 'final', 'prix', 'brisage', 'regles']) {
     await ev(`location.hash = '#${t}'`); await sleep(900);
     const bad = await ev(`document.querySelector('main').textContent.includes('Erreur de calcul') || document.querySelector('main').textContent.length < 300`);
     check('onglet ' + t + ' affiché', !bad);
@@ -98,12 +109,30 @@ try {
   const after2 = await ev(`document.querySelectorAll('.card .v')[3].textContent + ' | ' + document.querySelector('#mes-prix [data-k="optiBuy.${usedGen}"]').value`);
   check('prix d’une Optimakina utilisée (gén. ' + usedGen + ') changé depuis « Mes prix » : budget recalculé', usedGen && after2.split(' | ')[0] !== before2 && after2.endsWith('| 90000'), [before2, after2]);
   const capCard = await ev(`document.querySelectorAll('.card .s')[1].textContent`);
-  check('captures sans marge (capture sûre)', capCard.includes('100 %'), capCard);
+  check('captures : ton temps de capture affiché', capCard.includes('min la capture'), capCard);
+  // 6 quater. calculateur par dragodinde (comme muldo-calculator)
+  await ev(`location.hash = '#calcul'`); await sleep(1500);
+  const c1 = await card();
+  await setSel('calc.mult', 3); await sleep(1200);
+  const c3 = await card();
+  const bb = a => num(a[0].split('=')[1]);
+  check('calculateur : 3 lots = 3 fois plus de bébés', Math.abs(bb(c3) - 3 * bb(c1)) <= 0.02 + 0.01 * bb(c3), [c1[0], c3[0]]);
+  const casc = await ev(`[...document.querySelectorAll('h3')].map(h => h.textContent).join(' | ') + ' #' + [...document.querySelectorAll('main table')].filter(t => !t.closest('#mes-prix')).pop().querySelectorAll('tbody tr').length`);
+  check('calculateur : cascade étape par étape', casc.includes('Cascade') && +casc.split('#').pop() >= 9, casc);
+  await setSel('calc.mode', 'avance'); await sleep(1200);
+  const adv = await ev(`document.querySelectorAll('[data-k^="calc.perGen."]').length`);
+  check('calculateur avancé : niveau, Optimakina et tours par génération', adv >= 27, adv);
   // 7. remise à zéro
   await ev(`window.confirm = () => true; document.querySelector('[data-tab="prix"]').click()`); await sleep(1000);
   await ev(`document.querySelector('[data-reset]').click()`); await sleep(1500);
   const back = await ev(`document.querySelector('[data-k="enclos"]').value`);
   check('remise à zéro : 2 enclos', back === '2', back);
+  // 7 bis. mise à niveau 5 → 6 : 12 enclos ramenés à 6, anciennes options retirées
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 5, enclos: 12, parentsOnly: true, cloneKeepsLevel: true, neurone: 36000 }))`);
+  await send('Page.reload'); await sleep(2500);
+  await ev(`location.hash = '#prix'`); await sleep(1500);
+  const v6 = await ev(`document.querySelector('[data-k="enclos"]').value + '|' + !!document.querySelector('[data-k="parentsOnly"]') + '|' + !!document.querySelector('[data-k="cloneKeepsLevel"]') + '|' + !!document.querySelector('[data-k="reuse"]') + '|' + document.querySelector('#mes-prix [data-k="neurone"]').value`);
+  check('version 5 → 6 : 6 enclos au plus, options « parents seuls » et « clone garde son niveau » retirées, saisie gardée', v6 === '6|false|false|true|36000', v6);
   // 8. mise à niveau des réglages d'une ancienne version (3) : anciens prix par défaut remplacés, saisies gardées
   await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 3, enclos: 3, runePrices: { 'Rune Vi': 135, 'Rune Ra Vi': 1317, 'Rune Pui': 999, 'Rune Ine': null }, brisage: { runePrice: 20000 } }))`);
   await send('Page.reload'); await sleep(2500);

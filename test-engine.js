@@ -71,18 +71,39 @@ t('plan à 100 % sans clonage = nombre d’instances de l’arbre', () => {
   for (const g of E.GEN1) near(pl.captures[g] || 0, acc[g] || 0, 1e-9, g);
   near(pl.need['Turquoise'], 2, 1e-9); near(pl.need['Orchidée et Pourpre'], 3, 1e-9);
 });
-t('plan à 100 % avec clonage : (U − 1) / 2 clones par génération, recalcul indépendant', () => {
-  const s = Object.assign({}, S, { optiBonus: 100, clone: true, recup: false });
-  const pl = E.plan('Prune et Rousse', E.uniformPolicy('Prune et Rousse', 1, true), s);
-  // recalcul indépendant : génération par génération, de 10 à 1
-  const need = { 'Prune et Rousse': 1 }, uses = {};
-  for (let g = 10; g >= 1; g--) {
-    const names = E.NAMES.filter(m => E.TREE[m].gen === g);
-    const U = names.reduce((x, m) => x + (uses[m] || 0), 0), cr = U > 1 ? (U - 1) / (2 * U) : 0;
-    for (const m of names) { if (m !== 'Prune et Rousse') need[m] = (uses[m] || 0) * (1 - cr); if (g > 1 && need[m] > 0) for (const p of E.TREE[m].p) uses[p] = (uses[p] || 0) + need[m]; }
+t('réserve par tours : 1 tour = 2/p parents neufs par réussite, quels que soient les réglages ; limites en recroisant jusqu’au bout', () => {
+  for (const [reuse, clone] of [[true, true], [true, false], [false, true], [false, false]]) {
+    const s = Object.assign({}, S, { reuse, clone });
+    for (const p of [0.3, 0.62, 1]) near(E.freshFor(1, p, 1, s), 2 / p, 1e-9, `${reuse}/${clone}/${p}`);
   }
-  for (const m of ['Prune', 'Rousse', 'Turquoise', 'Orchidée et Pourpre', 'Amande', 'Dorée', 'Ébène']) near(pl.need[m], need[m] || 0, 1e-9, m);
-  near(pl.need['Prune'], 1, 1e-9);   // une seule Prune utilisée : pas de clone possible
+  const p = 0.5;
+  near(E.freshFor(1, p, 500, Object.assign({}, S, { reuse: true, clone: true })), 1, 1e-6);           // une réussite sort de la réserve : 1 neuf par réussite
+  near(E.freshFor(1, p, 500, Object.assign({}, S, { reuse: false, clone: true })), 1 / p, 1e-6);      // clones seuls (muldo-calculator : ×2 tentatives)
+  near(E.freshFor(1, p, 500, Object.assign({}, S, { reuse: true, clone: false })), (1 + p) / p, 1e-6); // ratés seuls
+  near(E.freshFor(1, p, 2, Object.assign({}, S, { reuse: true, clone: true })), 1 / (1 - 0.75 * 0.75), 1e-9);
+});
+t('plan à 100 % avec ratés et clones : réserve commune si parents de même génération, chaînes sinon, au moins 1 par côté (recalcul indépendant)', () => {
+  const s = Object.assign({}, S, { optiBonus: 100, clone: true, reuse: true });
+  for (const k of [1, 2, 3]) {
+    const pl = E.plan('Prune et Rousse', E.uniformPolicy('Prune et Rousse', 1, true, k), s);
+    const need = { 'Prune et Rousse': 1 }, uses = {}, d = 0.5;   // p = 1 : la réserve perd la moitié à chaque tour
+    for (let g = 10; g >= 2; g--) for (const m of E.NAMES.filter(x => E.TREE[x].gen === g)) {
+      if (m !== 'Prune et Rousse') need[m] = uses[m] || 0;
+      if (!need[m]) continue;
+      const [A, B] = E.TREE[m].p, gA = E.TREE[A].gen, gB = E.TREE[B].gen;
+      if (gA === gB) { const side = Math.max(1, need[m] / (1 - Math.pow(d, k)) / 2); uses[A] = (uses[A] || 0) + side; uses[B] = (uses[B] || 0) + side; }
+      else {   // p = 1 : la chaîne réussit au 1er tour ; côté le moins avancé : 1 par tentative moins les clones revenus
+        const hi = Math.max(1, need[m]), lo = Math.max(1, need[m] * (1 - 0.5 * (k - 1) / k));
+        uses[gA > gB ? A : B] = (uses[gA > gB ? A : B] || 0) + hi; uses[gA > gB ? B : A] = (uses[gA > gB ? B : A] || 0) + lo;
+      }
+    }
+    for (const m of ['Prune', 'Turquoise', 'Orchidée et Pourpre', 'Ébène', 'Rousse', 'Amande', 'Dorée']) near(pl.need[m], uses[m] || 0, 1e-9, 'k' + k + ' ' + m);
+    if (k === 1) { const acc = inst('Prune et Rousse', 1, {}); for (const g of E.GEN1) near(pl.captures[g] || 0, acc[g] || 0, 1e-9, g); }
+  }
+  // chaque tour en plus allonge le chemin d'une préparation par génération
+  const a = E.plan('Prune et Rousse', E.uniformPolicy('Prune et Rousse', 40, true, 1), s), b = E.plan('Prune et Rousse', E.uniformPolicy('Prune et Rousse', 40, true, 2), s);
+  near(b.critH - a.critH, 9 * E.prepHours(1, 40, s), 1e-6);
+  assert.ok(b.capTot < a.capTot, 'moins de captures en recroisant');
 });
 t('dernier croisement : un raté gén. 9 × Rousse rend une gén. 9 bien moins souvent que Prune × Émeraude', () => {
   const a = E.finalCross('Prune et Rousse', 1, false, S), b = E.finalCross('Prune et Émeraude', 1, false, S);
@@ -93,7 +114,8 @@ t('optimiseur : au moins aussi rapide que les stratégies uniformes', () => {
   const best = E.optimize('Prune et Rousse', s, 'jours').plan;
   for (const [L, o] of [[1, false], [1, true], [100, false], [100, true], [167, true], [200, false], [200, true]]) {
     const u = E.plan('Prune et Rousse', E.uniformPolicy('Prune et Rousse', L, o), s);
-    assert.ok(best.days <= u.days + 1e-9, `niv. ${L} opti ${o} : ${u.days} < ${best.days}`);
+    const tm = p => p.days + p.capTot * 5 / 1440;   // objectif temps : jours + ton temps de capture (5 min)
+    assert.ok(tm(best) <= tm(u) + 1e-9, `niv. ${L} opti ${o} : ${tm(u)} < ${tm(best)}`);
   }
 });
 t('optimiseur kamas : au moins aussi économe que les stratégies uniformes', () => {
@@ -194,14 +216,46 @@ t('mise de départ : socle sous le seuil, au moins cher par tranche', () => {
   const s = Object.assign({}, SR, { fertFam: 'Philtre', xpFam: 'Potion', enclos: 2 });   // chaque enclos a sa mise de départ
   near(E.depositTotal(s), 2 * (80 * 18.7 + 80 * 46.5 + 80 * 3.4 + (80 * 12.5 + 60 * 347)), 1e-6);
 });
-t('génétique : « parents seuls » retire les grands-parents et rend plus souvent un parent', () => {
-  const g = E.outcomes('Amande et Dorée', 'Dorée et Rousse', 1, 1, false, S);
-  const p = E.outcomes('Amande et Dorée', 'Dorée et Rousse', 1, 1, false, Object.assign({}, S, { parentsOnly: true }));
-  assert.deepStrictEqual(p.items.map(i => i.name).sort(), ['Amande et Dorée', 'Dorée et Rousse', 'Ébène']);
-  assert.ok(g.items.some(i => i.name === 'Dorée'));
-  near(p.pTarget, g.pTarget, 1e-12);
-  const r = E.recovery('Amande et Dorée', 'Dorée et Rousse', 1, 1, false, Object.assign({}, S, { parentsOnly: true }));
-  near(r.rA + r.rB, 1, 1e-9);
+t('étape déséquilibrée (Prune × Rousse) : en recroisant les ratés, peu de Prunes neuves, une Rousse par tentative', () => {
+  const s = Object.assign({}, S, { reuse: true, clone: true }), p = 0.62;
+  const one = E.freshSplit(1, p, 1, 'Prune', 'Rousse', s); near(one.A, 1 / p, 1e-9); near(one.B, 1 / p, 1e-9);   // 1 tour : comme sans recroiser
+  const three = E.freshSplit(1, p, 3, 'Prune', 'Rousse', s); near(three.A, 1 / (1 - Math.pow(1 - p, 3)), 1e-9); near(three.B, (1 / p) * (1 - 0.5 * 2 / 3), 1e-9);
+  assert.ok(three.A < 1.06, 'une seule Prune suffit presque toujours en 3 tours : ' + three.A);
+  const sym = E.freshSplit(1, p, 3, 'Ivoire', 'Turquoise', s); near(sym.A, E.freshFor(1, p, 3, s) / 2, 1e-12);
+});
+t('génétique réelle : un raté garde ses parents (exemple de l’utilisateur : gén. 1 dont un parent est gén. 4)', () => {
+  // Amande ratée née de Ébène et Indigo (gén. 4) × Amande et Rousse : avec une Ébène et Indigo, la recette du Pourpre (gén. 5) est dans l'arbre
+  const rate = E.outcomesInd({ c: 'Amande', p: ['Ébène et Indigo', 'Amande et Rousse'] }, E.canon('Ébène et Indigo'), 100, 100, false, S);
+  assert.strictEqual(rate.targetGen, 5); assert.deepStrictEqual(rate.targets, ['Pourpre']); near(rate.pTarget, 0.6, 1e-9);
+  const capt = E.outcomes('Amande', 'Ébène et Indigo', 100, 100, false, S);
+  assert.strictEqual(capt.targetGen, 4);
+  // sur tout l'arbre : un raté recroisé avec un parent neuf redonne la génération visée presque aussi souvent
+  for (const X of E.NAMES.filter(n => E.TREE[n].gen > 1)) {
+    const [A, B] = E.TREE[X].p, fs = E.failStats(A, B, 100, true, S), p = E.recovery(A, B, 100, 100, true, S).p;
+    assert.ok(fs.pRe >= 0.98 * p, X + ' ' + fs.pRe + ' / ' + p);
+  }
+});
+t('calculateur par dragodinde (comme muldo-calculator) : proportionnel aux lots ; à 100 % sans clone ni raté, 1 lot = 1 bébé', () => {
+  const s = Object.assign({}, S, { optiBonus: 100, clone: false, reuse: false });
+  const c1 = E.cascade('Prune et Rousse', s, { mult: 1, def: { L: 1, opti: true, k: 1 } });
+  near(c1.babies, 1, 1e-9);
+  const acc = inst('Prune et Rousse', 1, {}); near(c1.capTot, Object.values(acc).reduce((a, b) => a + b, 0), 1e-9);
+  const c3 = E.cascade('Prune et Rousse', s, { mult: 3, def: { L: 1, opti: true, k: 1 } }); near(c3.babies, 3, 1e-9);
+  // clones seuls, beaucoup de tours : ×2 tentatives par paire, comme le multiplicateur 2 − 1/(paires + 1) de muldo-calculator
+  const sc = Object.assign({}, S, { clone: true, reuse: false });
+  const one = E.cascade('Amande et Rousse', sc, { mult: 10, def: { L: 1, opti: false, k: 40 } });
+  near(one.babies, 2 * 10 * E.pTarget(1, 1, false, sc), 1e-6);
+  near(one.multFor1 * one.babies / one.mult, 1, 1e-9);
+});
+t('brisage en temps et vente au niveau 200 : rien sans prix, sinon kamas en plus par jour de place', () => {
+  const s0 = Object.assign({}, S, { sell200: {} });
+  assert.strictEqual(E.saleDD('Prune', s0), null);
+  const s1 = Object.assign({}, S, { sell200: { 'Prune': 1000000 } }), v = E.saleDD('Prune', s1);
+  const extract = 9 * S.neurone * (1 - S.tax), base = E.instantBest('Prune', s1);
+  near(v.gain, 1000000 * (1 - S.tax) - extract, 1e-6);
+  near(v.perPlaceDay, (v.gain - base) * 24 / Math.max(E.levelHours(1, 200, s1), s1.refillH), 1e-6);
+  const r2 = E.bestBrisageTime('Rousse', S); assert.ok(r2.best.hours >= 0 && r2.best.perPlaceDay < 1e5, 'pas de division par presque zéro : ' + r2.best.L + ' ' + r2.best.perPlaceDay);
+  const bt = E.bestBrisageTime('Rousse', S); assert.ok(bt && bt.best && bt.best.L >= 2);
 });
 t('brisage DD : les 66 couleurs ont des bonus, gén. 1 sans neurone', () => {
   for (const X of E.NAMES) { assert.ok(Object.keys(E.BR.dd[X]).length >= 2, X); }
