@@ -264,7 +264,7 @@
     var noCarry = E.plan(X, main.policy, nc);
     // débit en continu : mesuré sur un grand élevage (au moins 50), où le démarrage ne pèse plus ; durée : sur TON nombre
     // un grand élevage recroise plus : sa stratégie est optimisée à part (même objectif), sauf si ton nombre est déjà grand
-    var bigNeed = Math.max(50, s.topNeed || 1), bigPol = main.policy;
+    var bigNeed = Math.max(50, s.topNeed || 1), bigPol = main.policy;   // (sert aussi au tableau 9)
     if ((s.topNeed || 1) < 50) { var bs = clone(s); bs.topNeed = bigNeed; bigPol = E.optimize(X, bs, planMode() === 'renta' ? 'renta' : 'jours', { allowOpti: planMode() !== 'sans', starts: 1 }).policy; }
     var sizes = [1, 2, 3, 4, 5, 6].map(function (e) {
       var t = clone(s); t.enclos = e; var z = E.plan(X, main.policy, t);
@@ -272,7 +272,21 @@
       z.perWeek = 7 * 24 * big.places / (big.placeH / big.need[X]); z.capPerWeek = z.perWeek * big.capTot / big.need[X];
       return z;
     });
-    PCACHE = { key: k, val: { s: s, X: X, modes: modes, main: main, tiers: tiers, uni: uni, noCarry: noCarry, sizes: sizes } };
+    // après la première X : en faire d'autres (X × capture en chaîne, X × X), comparé au chemin complet refait pour chacune
+    var mm = planMode(), N0 = Math.max(1, s.topNeed || 1), Ns = [10, 50];
+    if (N0 > 1 && Ns.indexOf(N0) < 0) Ns.push(N0);
+    Ns.sort(function (a, b) { return a - b; });
+    var s1 = clone(s); s1.topNeed = 1;
+    var mine = E.bestMultiply(X, s, mm, Ns), selfL = mine ? mine.L : 60;
+    var mult = { Ns: Ns, first: E.plan(X, main.policy, s1), mine: mine, sans: E.bestMultiply(X, s, 'sans', Ns), avec: E.bestMultiply(X, s, 'jours', Ns),
+      full: E.multiply(X, s, { L: 167, opti: true, N: Ns }),
+      self167: E.multiply(X, s, { method: 'self', L: 167, opti: true, N: Ns, start: 2 }),
+      selfL: E.multiply(X, s, { method: 'self', L: selfL, opti: false, N: Ns, start: 2 }),
+      path: Ns.map(function (n) { var t = clone(s); t.topNeed = n; return E.plan(X, bigPol, t); }) };
+    var grid = [1, 2, 3, 4, 6, 8, 12, 24].map(function (cx) {
+      return { cx: cx, v: [1, 2, 3, 4, 5, 6].map(function (e) { var t = clone(s); t.refillH = 24 / cx; t.enclos = e; var b = E.bestMultiply(X, t, mm, [2]); return b ? b.perDay : null; }) };
+    });
+    PCACHE = { key: k, val: { s: s, X: X, modes: modes, main: main, tiers: tiers, uni: uni, noCarry: noCarry, sizes: sizes, mult: mult, grid: grid } };
     return PCACHE.val;
   }
   function optiTotal(pl) { return Object.keys(pl.optiCount).reduce(function (a, g) { return a + pl.optiCount[g]; }, 0); }
@@ -445,11 +459,12 @@
     var rowsD = P.main.gens.map(function (gg) {
       var ns = pl.nodes.filter(function (n) { return n.gen === gg; }), n0 = ns[0], L = n0.L, oc = E.optiCost(gg, s);
       var p0 = E.recovery(n0.A, n0.B, L, L, false, s).p, p1 = E.recovery(n0.A, n0.B, L, L, true, s).p;
-      return [String(gg), ns.map(function (n) { return dd(n.name); }).join('<br>'), oc == null ? '<span class="dim">prix ?</span>' : f(oc), 'niv. ' + L, pct(p0), '<b>' + pct(p1) + '</b>',
+      var cr = E.optiCraft(gg, s);
+      return [String(gg), ns.map(function (n) { return dd(n.name); }).join('<br>'), numInput('optiBuy.' + gg, S.optiBuy[gg], cr == null ? 'prix ?' : 'craft ' + f(cr)) + (oc == null ? '' : '<br><span class="mini">compté ' + f(oc) + '</span>'), 'niv. ' + L, pct(p0), '<b>' + pct(p1) + '</b>',
         f(1 / p1, 2), oc == null ? '—' : '<b>' + f(oc / p1) + '</b>', f(1 / p0 - 1 / p1, 2), n0.opti ? '<span class="pill g">oui</span>' : 'non'];
     });
-    out += table(['Gén.', 'Dragodinde', 'Prix d’une Makina', 'Niveau', 'Chance sans', 'Chance avec', 'Makinas par réussite', 'Coût Makina par réussite', 'Accouplements évités par réussite', 'Dans ton plan'], rowsD, ['', 'l']);
-    out += '<p class="note">Une Makina par accouplement (+20 % de chance). Prix : ton prix d’achat dans « Mes prix », sinon le coût du craft (Pépites à ' + f((S.ingPrices || {})['Pépite']) + ').</p>';
+    out += table(['Gén.', 'Dragodinde', 'Ton prix d’une Makina<br><span class="mini">vide = craft</span>', 'Niveau', 'Chance sans', 'Chance avec', 'Makinas par réussite', 'Coût Makina par réussite', 'Accouplements évités par réussite', 'Dans ton plan'], rowsD, ['', 'l']);
+    out += '<p class="note">Une Makina par accouplement (+20 % de chance). Mets ton prix pour chaque génération (une Makina basse est souvent moins chère) : la stratégie du tableau 1 se recalcule. Vide = coût du craft (10 Pépites à ' + f((S.ingPrices || {})['Pépite']) + ').</p>';
 
     // ---- 6. quoi faire de chaque monture
     out += h('h3', null, '6. Briser, vendre ou extraire : les dragodindes de ton plan');
@@ -483,6 +498,57 @@
     out += table(['Enclos', 'Places', 'Niveau d’éleveur', esc(X) + ' par semaine<br><span class="mini">à plein régime</span>', 'Captures par semaine', 'Durée pour tes ' + f(Nn), 'Captures pour tes ' + f(Nn)], rowsZ);
     out += '<p class="note">« À plein régime » : tes places toujours pleines, chaque génération relancée dès que la précédente libère ses parents. ' +
       'Le débit est mesuré sur un élevage d’au moins 50, avec la stratégie qui lui convient (plus de tours de recroisement). La durée pour ton nombre compte aussi le démarrage (monter jusqu’à la gén. ' + top + '). Mêmes barres et mêmes connexions que ton plan.</p>';
+    // ---- 9. après ta première X : en faire d'autres
+    var M = P.mult;
+    out += h('h3', null, '9. Après ta première ' + esc(X) + ' : en faire d’autres');
+    function reachCells(r) {
+      return M.Ns.map(function (n) {
+        var x = r && r.reach[n];
+        if (x) return '<b>' + days(M.first.days + x.days) + '</b><br><span class="mini">1re + ' + days(x.days) + '</span>';
+        return '<span class="ko">jamais</span>' + (r ? '<br><span class="mini">au plus ' + f(Math.floor(r.maxReach + 1e-9)) + '</span>' : '');
+      });
+    }
+    function mrow(lab, r, cls) {
+      if (!r) return null;
+      var cap = r.method === 'cap';
+      return { cls: cls || '', cells: [lab, 'niv. ' + r.L, r.opti ? 'oui (' + f(r.unit) + ')' : 'non', '<b>' + pct(r.p) + '</b>', hours(r.T),
+        cap ? '<b>' + f(r.perDay, 1) + '</b>' : '<span class="ko">0</span>', cap ? f(r.attPerDay, 1) : '—', cap && r.opti ? f(r.attPerDay, 1) + ' <span class="mini">(' + f(r.attPerDay * r.unit) + ')</span>' : '—',
+        cap ? '<b class="' + (r.gainPerDay >= 0 ? 'ok' : 'ko') + '">' + f(r.gainPerDay) + '</b>' : '—'].concat(reachCells(r)) };
+    }
+    function same(a, b) { return a && b && a.L === b.L && a.opti === b.opti; }
+    var pn = M.mine ? '× ' + dd(M.mine.partner) + ' capturée' : '';
+    var rowsM = [];
+    if (M.mine) {
+      rowsM.push(mrow('<b>⭐ ' + pn + '</b> <span class="pill g">ta solution</span>', M.mine, 'best'));
+      if (!same(M.sans, M.mine)) rowsM.push(mrow(pn + ', sans Makina', M.sans));
+      if (!same(M.avec, M.mine)) rowsM.push(mrow(pn + ', avec Makina', M.avec));
+      if (!same(M.full, M.mine)) rowsM.push(mrow(pn + ', 100 %', M.full));
+    }
+    rowsM.push(mrow('× ' + dd(X) + ', 100 % <span class="mini">(2 au départ)</span>', M.self167, 'alt'));
+    rowsM.push(mrow('× ' + dd(X) + ' <span class="mini">(2 au départ)</span>', M.selfL, 'alt'));
+    var lastP = M.path[M.path.length - 1], lastN = M.Ns[M.Ns.length - 1];
+    rowsM.push({ cls: 'alt', cells: ['🔁 Tout le chemin pour chacune', levelsOf(lastP), optiGens(lastP), '—', '—', f(lastN / lastP.days, 1), f(lastP.capTot / lastP.days, 1), '—',
+      '<b class="' + (perDay(lastP) >= 0 ? 'ok' : 'ko') + '">' + f(perDay(lastP)) + '</b>'].concat(M.path.map(function (pp) { return '<b>' + days(pp.days) + '</b>'; })) });
+    out += table(['Ta ' + esc(X) + ' accouplée…', 'Niveau', 'Makina', 'Chance', 'Tentative tous les', 'Par jour', 'Captures / jour', 'Makinas / jour (kamas)', 'Gain / jour']
+      .concat(M.Ns.map(function (n) { return 'Pour ' + f(n) + '<br><span class="mini">en tout</span>'; })), rowsM.filter(Boolean), ['l']);
+    out += '<p class="note">' + (M.mine ? '<b>' + esc(X) + ' × ' + esc(M.mine.partner) + '</b> : la génération visée est celle de ta ' + esc(X) + ', à la même chance que ' + esc(X) + ' × ' + esc(X) + '. Un raté garde ' + esc(X) + ' dans son arbre : avec une nouvelle ' + esc(M.mine.partner) + ', il vise encore ' + esc(X) + ' (' + pct(M.mine.pRe) + '). ' +
+      'Une seule ' + esc(X) + ' lance donc une chaîne sans fin ; deux ' + esc(X) + ' stériles clonées en lancent une de plus (« avec clones »), jusqu’à remplir tes ' + pl.places + ' places (2 par tentative). « Pour 50 » : jours en tout, dont la 1re par le plan (« 1re + … » : le temps après elle, clones compris). ' : '') +
+      '<b>' + esc(X) + ' × ' + esc(X) + '</b> ne multiplie pas : deux fécondes donnent au mieux un bébé et deux stériles, et le clone de deux stériles ne rend qu’une féconde. ' +
+      'Ces bébés ne rapportent aucun généton (ils ne dépassent pas leurs parents) : le gain vient des neurones (' + f(M.mine ? M.mine.valueX : 0) + ' par ' + esc(X) + '). ' +
+      '« Refaire tout le chemin » rapporte des génétons à chaque étape, mais va bien moins vite. Modèle dofuselevage (non officiel) : vérifie la chance dans l’interface d’accouplement du jeu.</p>';
+
+    // ---- 10. par jour selon tes connexions et tes enclos
+    out += h('h3', null, '10. ' + esc(X) + ' par jour selon tes connexions et tes enclos');
+    var rowsG = P.grid.map(function (row) {
+      return [row.cx === +S.connexions ? '<b>' + row.cx + '</b> <span class="pill o">toi</span>' : String(row.cx)].concat(row.v.map(function (v, i) {
+        var mineC = row.cx === +S.connexions && i + 1 === s.enclos, lock = ENCLOS_LVL[i] > (+S.eleveur || 1);
+        var t = v == null ? '—' : f(v, 1);
+        return mineC ? '<b class="gold">' + t + '</b>' : (lock ? '<span class="dim">' + t + '</span>' : t);
+      }));
+    });
+    out += table(['Connexions par jour'].concat([1, 2, 3, 4, 5, 6].map(function (e) { var lock = ENCLOS_LVL[e - 1] > (+S.eleveur || 1); return e + ' enclos<br><span class="mini">' + (lock ? '🔒 ' : '') + 'niv. ' + ENCLOS_LVL[e - 1] + '</span>'; })), rowsG);
+    out += '<p class="note">' + esc(X) + ' faites par jour à plein régime avec ' + (M.mine ? esc(X) + ' × ' + esc(M.mine.partner) : 'la chaîne') + ', le meilleur niveau pour chaque case (' + esc(MODES[planMode()].replace(/^\S+ /, '').toLowerCase()) + '), tes barres. ' +
+      'En doré : ton réglage (' + S.connexions + ' connexions, ' + s.enclos + ' enclos). En gris : enclos pas encore débloqués à ton niveau d’éleveur (' + (+S.eleveur || 1) + ').</p>';
     out += '<p style="margin-top:20px"><button type="button" class="btn" data-expert="1">📊 Autres calculs (selon ton plan)</button></p>';
     return out;
   }
@@ -1143,6 +1209,6 @@
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'plan'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (tout se règle dans « Mon plan » ; les autres calculs le suivent ; élevage en continu selon la taille)';
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (en faire d’autres après la première : gén. 10 × capture ; par jour selon connexions et enclos ; prix des Makinas par génération)';
   render();
 })();

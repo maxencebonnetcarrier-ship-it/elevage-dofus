@@ -35,8 +35,8 @@ try {
   const selP = async (k, v) => { await ev(`(() => { const e = document.querySelector('main [data-k="${k}"]'); e.value = ${JSON.stringify(String(v))}; e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`); await sleep(3500); };
   const tblAfter = t => ev(`(() => { const h = [...document.querySelectorAll('main h3')].find(x => x.textContent.startsWith(${JSON.stringify(t)})); let n = h && h.nextElementSibling; while (n && !n.querySelector('table') && !n.matches('.tablewrap')) n = n.nextElementSibling; return n ? [...n.querySelectorAll('tbody tr')].map(r => [...r.children].map(c => c.textContent.trim()).join(' ¦ ')) : []; })()`);
   // 00. une seule page : aucun onglet, réglages dans la page, 7 tableaux numérotés
-  const pv = await ev(`document.querySelectorAll('#tabs [data-tab]').length + '|' + document.getElementById('global').children.length + '|' + document.querySelectorAll('[data-k="planTarget"] option').length + '|' + [...document.querySelectorAll('main h3')].map(x => x.textContent.slice(0, 2)).filter(x => /^[0-9][.]/.test(x)).join('')`);
-  check('une page : aucun onglet, rien en haut, 63 dragodindes au choix, tableaux 1 à 8', pv === '0|0|63|1.2.3.4.5.6.7.8.', pv);
+  const pv = await ev(`document.querySelectorAll('#tabs [data-tab]').length + '|' + document.getElementById('global').children.length + '|' + document.querySelectorAll('[data-k="planTarget"] option').length + '|' + [...document.querySelectorAll('main h3')].map(x => (x.textContent.match(/^[0-9]+[.]/) || [''])[0]).join('')`);
+  check('une page : aucun onglet, rien en haut, 63 dragodindes au choix, tableaux 1 à 10', pv === '0|0|63|1.2.3.4.5.6.7.8.9.10.', pv);
   const sols = await tblAfter('1.');
   check('stratégie par défaut : « le plus rentable en temps » (coût des Makinas compté), 7 lignes', sols.length === 8 && sols[3].includes('sans les porteurs') && sols[0].includes('Le plus rentable en temps') && sols[0].includes('ton plan'), sols.slice(0, 2));
   const ord = await tblAfter('2.');
@@ -101,6 +101,18 @@ try {
   check('runes simples seulement : aucun conseil de fusion', fus === false, fus);
   const mu = await tblAfter('7.');
   check('tableau 7 : Muldo et Volkorne, niveau de brisage et kamas par jour', mu.length === 2 && mu.every(r => /niv\. \d+/.test(r)), mu);
+  // 9-10. après la première : en faire d'autres ; par jour selon connexions × enclos ; prix des Makinas par génération
+  const m9 = await tblAfter('9.');
+  check('tableau 9 : ta solution = × Rousse capturée ; × Prune et Rousse « jamais » ; chemin complet comparé', m9[0].includes('Rousse capturée') && m9[0].includes('ta solution') && m9.filter(r => r.includes('jamais')).length >= 2 && m9[m9.length - 1].includes('Tout le chemin'), [m9[0].slice(0, 80), m9.length]);
+  const g10 = await tblAfter('10.');
+  const gold = await ev(`(() => { const h = [...document.querySelectorAll('main h3')].find(x => x.textContent.startsWith('10.')); let n = h.nextElementSibling; while (!n.querySelector('table')) n = n.nextElementSibling; const b = n.querySelector('b.gold'); return b ? b.textContent : ''; })()`);
+  check('tableau 10 : 8 lignes de connexions × 6 enclos, ta case en doré = « par jour » du tableau 9', g10.length === 8 && g10[0].split(' ¦ ').length === 7 && gold === m9[0].split(' ¦ ')[5], [g10.length, gold, m9[0].split(' ¦ ')[5]]);
+  const m5 = async () => (await tblAfter('5.')).find(r => r.startsWith('2 ¦'));
+  const before5 = await m5();
+  await ev(`(() => { const h = [...document.querySelectorAll('main h3')].find(x => x.textContent.startsWith('5.')); let n = h.nextElementSibling; while (!n.querySelector('table')) n = n.nextElementSibling; const e = n.querySelector('[data-k="optiBuy.2"]'); e.value = '20000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(4500);
+  const after5 = await m5();
+  check('tableau 5 : prix de la Makina gén. 2 saisi (20 000) → compté et coût par réussite recalculés', after5 && after5.replace(/[\s\u00a0\u202f]/g, '').includes('compté20000') && after5 !== before5, [before5 && before5.slice(0, 70), after5 && after5.slice(0, 70)]);
+  await ev(`(() => { const h = [...document.querySelectorAll('main h3')].find(x => x.textContent.startsWith('5.')); let n = h.nextElementSibling; while (!n.querySelector('table')) n = n.nextElementSibling; const e = n.querySelector('[data-k="optiBuy.2"]'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(4500);
   // autre dragodinde : Turquoise (gén. 7)
   await selP('planTarget', 'Turquoise');
   const tq = await ev(`document.querySelector('main h2').textContent`), ordT = await tblAfter('2.');

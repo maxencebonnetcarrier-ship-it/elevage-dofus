@@ -307,5 +307,20 @@ t('rentabilité par tier : chaque ligne a son propre tier, même si la barre a �
   P.rows.filter(r => !r.missing && r.fertFam === 'Extrait').forEach(r => { d[r.xpFam] = r.days; });
   assert.ok(d['Extrait'] > d['Philtre'], JSON.stringify(d));
 });
+t('multiplier une gén. 10 : avec une Rousse capturée, même chance que gén. 10 × gén. 10 ; un raté recommence à la même chance', () => {
+  const X = 'Prune et Rousse', pc = E.partnerFor(X, 60, false, S);
+  assert.strictEqual(pc.c, 'Rousse'); near(pc.p, E.pTarget(60, 60, false, S), 1e-9);
+  const ch = E.chainP(X, 'Rousse', 60, false, S); near(ch.pRe, ch.p, 0.005);
+  // une capture Amande partagerait la cible avec Amande et Prune : refusée
+  assert.ok(!E.partnerFor('Prune et Émeraude', 60, false, S) || E.partnerFor('Prune et Émeraude', 60, false, S).p >= 0.95 * E.pTarget(60, 60, false, S));
+});
+t('multiplier : gén. 10 × gén. 10 ne grandit jamais (2 au départ → jamais 10) ; × capture atteint 50, plus vite avec plus de places', () => {
+  const X = 'Prune et Rousse';
+  const self = E.multiply(X, S, { method: 'self', L: 167, opti: true, N: [10], start: 2 });
+  assert.strictEqual(self.reach[10], null); assert.ok(self.maxReach < 4.01);
+  const a = E.multiply(X, S, { L: 40, N: [50] }), b = E.multiply(X, Object.assign({}, S, { enclos: 4 }), { L: 40, N: [50] });
+  assert.ok(a.reach[50] && b.reach[50] && b.reach[50].days < a.reach[50].days && b.perDay > a.perDay);
+  near(a.perDay, Math.floor(20 / 2) * 24 / a.T * a.pEff, 1e-9);
+});
 console.log(`\n${n - fails}/${n} tests verts`);
 process.exit(fails ? 1 : 0);

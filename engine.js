@@ -641,6 +641,96 @@
     return { price: pr, gain: gain, hours: hours, perPlaceDay: (gain - base) * 24 / placeHours(hours, s) };
   }
 
+  // ---------------------------------------------------------------- multiplier une dragodinde déjà obtenue (ex. 50 gén. 10)
+  /* Deux façons d'en faire d'autres, une fois une X obtenue :
+     'cap'  : X × une capture gén. 1 de son arbre (la Rousse pour Prune et Rousse). La génération visée est celle de X : même
+              chance que X × X. Un raté garde X et la capture dans son arbre : recroisé avec une nouvelle capture, il vise encore X.
+              Une X lance donc une « chaîne » qui ne s'arrête pas ; deux X stériles clonées en lancent une de plus.
+     'self' : X × X. Deux X fécondes donnent au mieux un bébé X et deux stériles ; le clone de deux stériles ne rend qu'une
+              féconde : la réserve de X fécondes ne grandit jamais.
+     Modèle dofuselevage (non officiel) : à vérifier dans l'interface d'accouplement du jeu. */
+  function shareOf(o, X) { var p = 0; o.items.forEach(function (i) { if (i.name === X) p = i.p; }); return p; }
+  function partnerFor(X, L, opti, s) {   // la capture qui laisse toute la chance sur X
+    var best = null;
+    GEN1.forEach(function (c) {
+      var o = outcomesInd(canon(X), canon(c), L, L, opti, s);
+      if (o.targetGen !== TREE[X].gen) return;
+      var p = shareOf(o, X);
+      if (!best || p > best.p) best = { c: c, p: p, full: o.pTarget };
+    });
+    return best && best.p >= 0.95 * best.full ? best : null;
+  }
+  function chainP(X, c, L, opti, s) {
+    var o = outcomesInd(canon(X), canon(c), L, L, opti, s), p = shareOf(o, X), f = 1 - p, pRe = 0, w = 0;
+    o.items.forEach(function (i) {
+      if (i.name === X || i.p < 1e-6 || f <= 0) return;
+      pRe += i.p / f * shareOf(outcomesInd({ c: i.name, p: [X, c] }, canon(c), L, L, opti, s), X); w += i.p / f;
+    });
+    pRe = w ? pRe / w : p;
+    var piX = p >= 1 ? 1 : pRe / (1 - p + pRe);   // part des têtes de chaîne qui sont des X (les autres : des ratés porteurs)
+    return { p: p, pRe: pRe, pEff: piX * p + (1 - piX) * pRe, piX: piX };
+  }
+  function multiply(X, s, o) {
+    o = o || {};
+    var L = clamp(Math.round(o.L || 1), 1, 200), opti = !!o.opti, method = o.method || 'cap', start = Math.max(1, o.start || 1);
+    var targets = (o.N && o.N.length ? o.N : [o.N || 50]).slice().sort(function (a, b) { return a - b; });
+    var g = TREE[X].gen, unit = opti ? optiCost(g, s) : 0;
+    if (opti && unit === null) return null;
+    var st, partner = null;
+    if (method === 'cap') { partner = partnerFor(X, L, opti, s); if (!partner) return null; st = chainP(X, partner.c, L, opti, s); }
+    else { var px = shareOf(outcomes(X, X, L, L, opti, s), X); st = { p: px, pRe: 0, pEff: px, piX: 1 }; }
+    var refill = num(s.refillH) || 12, places = placesOf(s), hmax = Math.floor(places / 2);
+    var prepX = prepHours(1, L, s), prepC = method === 'cap' ? prepHours(s.capLevel || 1, L, s) : prepX;
+    var T = Math.max(1, Math.ceil(Math.max(prepX, prepC) / refill - 1e-9)) * refill;   // une tentative par connexion entière
+    // ce que coûte une tentative : Makina, filet, XP et fécondité des deux parents (à tes prix de carburant)
+    var fc = fertCost(s) || 0, perAtt = (opti ? unit : 0) + (method === 'cap' ? (num(s.filet) || 0) : 0) +
+      (levelCost(1, L, s) || 0) + (levelCost(method === 'cap' ? (s.capLevel || 1) : 1, L, s) || 0) + 2 * fc;
+    function run(grow) {   // en moyenne, tentative par tentative ; grow = cloner les X stériles pour lancer d'autres chaînes
+      var h = method === 'cap' ? Math.min(start, hmax) : Math.min(start, places), Sx = 0, count = start, t = 0, att = 0, clones = 0;
+      var hit = {}, k = 0;
+      for (var cyc = 0; cyc < 4000 && k < targets.length; cyc++) {
+        var a = method === 'cap' ? Math.min(h, hmax) : Math.min(h / 2, hmax);
+        if (a < 0.02) break;
+        att += a; t += T;
+        if (method === 'cap') { count += a * st.pEff; Sx += a * st.piX; }
+        else { count += a * st.p; h += a * st.p - 2 * a; Sx += 2 * a; }
+        while (k < targets.length && count >= targets[k] - 1e-9) { hit[targets[k]] = { days: t / 24, att: att, clones: clones }; k++; }
+        if (grow) {
+          var room = method === 'cap' ? hmax - h : places - h, c2 = Math.max(0, Math.min(Sx / 2, room));
+          if (c2 > 1e-9) { h += c2; Sx -= 2 * c2; count -= c2; clones += c2; }
+        }
+      }
+      return { hit: hit, max: count };
+    }
+    var runs = [run(true), run(false)], res = {};
+    targets.forEach(function (n) {
+      var best = null;
+      runs.forEach(function (r, i) { var x = r.hit[n]; if (x && (!best || x.days < best.days)) best = Object.assign({ grow: i === 0 }, x); });
+      res[n] = best;
+    });
+    var perDayAtt = hmax * 24 / T, perDay = method === 'cap' ? perDayAtt * st.pEff : 0;
+    var valueX = g * (num(s.neurone) || 0) * (1 - (num(s.tax) || 0));
+    return { X: X, method: method, L: L, opti: opti, partner: partner && partner.c, p: st.p, pRe: st.pRe, pEff: st.pEff, T: T, unit: unit,
+             perDay: perDay, attPerDay: method === 'cap' ? perDayAtt : 0, costPerAtt: perAtt, valueX: valueX,
+             gainPerDay: method === 'cap' ? perDay * valueX - perDayAtt * perAtt : null,
+             reach: res, maxReach: Math.max(runs[0].max, runs[1].max), start: start };
+  }
+  var MULT_LEVELS = [1, 20, 40, 60, 80, 100, 120, 150, 167, 200];
+  // meilleur niveau pour multiplier X à la chaîne : 'jours' = le plus de X par jour ; 'renta' = le plus de kamas par jour ; 'sans' = sans Makina
+  function bestMultiply(X, s, mode, N) {
+    var best = null;
+    MULT_LEVELS.forEach(function (L) {
+      [false, true].forEach(function (op) {
+        if (op && mode === 'sans') return;
+        var r = multiply(X, s, { L: L, opti: op, N: N || [50] });
+        if (!r) return;
+        var v = mode === 'renta' ? r.gainPerDay : r.perDay;
+        if (!best || v > best.v + 1e-9) best = { v: v, r: r };
+      });
+    });
+    return best && best.r;
+  }
+
   // ---------------------------------------------------------------- brisage Muldo / Volkorne
   // « jeu » : (3 × bonus × poids × niveau de la monture / 200 + 1) × taux / poids de la rune ; « video » : formule de la vidéo
   function brisageRunes(L, b) {
@@ -705,6 +795,6 @@
               optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel, bestPerSimple: bestPerSimple,
               SCROLLS: SCROLLS, SCROLL_STATS: SCROLL_STATS, scrollName: scrollName, scrollValues: scrollValues, genetonValue: genetonValue,
               TOURS: TOURS, canon: canon, outcomesInd: outcomesInd, failStats: failStats, poolParams: poolParams, freshFor: freshFor, placesOf: placesOf,
-              cascade: cascade, freshSplit: freshSplit, carrierP: carrierP, leftoverOf: leftoverOf, bestBrisageTime: bestBrisageTime, saleDD: saleDD, instantBest: instantBest };
+              cascade: cascade, freshSplit: freshSplit, carrierP: carrierP, leftoverOf: leftoverOf, multiply: multiply, bestMultiply: bestMultiply, partnerFor: partnerFor, chainP: chainP, MULT_LEVELS: MULT_LEVELS, bestBrisageTime: bestBrisageTime, saleDD: saleDD, instantBest: instantBest };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);
