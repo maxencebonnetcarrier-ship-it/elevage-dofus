@@ -55,7 +55,7 @@ try {
   check('« combien j’en veux » = 100 : titre « 100 × », 100 Prune et Rousse à faire', h100.includes('100 ×') && (o100[o100.length - 1] || '').split(' ¦ ')[3] === '100', [h100, (o100[o100.length - 1] || '').slice(0, 60)]);
   const z100 = await tblAfter('8.');
   const zd = i => numP(z100[i].split(' ¦ ')[5]), zw = i => numP(z100[i].split(' ¦ ')[3]);
-  check('tableau 8 (100 visées) : 6 tailles, débit qui monte avec les enclos, 100 plus vite avec 6 enclos', z100.length === 6 && zw(5) > zw(1) && zw(1) > zw(0) && zd(5) < zd(1) && z100[1].includes('ton plan'), [z100[1], z100[5]]);
+  check('tableau 8 (100 visées) : 6 tailles, débit qui monte avec les enclos, 100 plus vite avec 6 enclos', z100.length === 6 && zw(5) > zw(1) && zw(1) > zw(0) && zd(5) < zd(1) && z100[5].includes('ton plan'), [z100[1], z100[5]]);
   await selP('planCount', 1);
   // plafond relevé à 140 000 : les deux barres le suivent, l'XP va plus vite partout
   const xp100 = async () => (await tblAfter('4.')).find(r => r.startsWith('100')).split(' ¦ ')[1];
@@ -233,7 +233,18 @@ try {
   await ev(`window.confirm = () => true; document.querySelector('[data-tab="prix"]').click()`); await sleep(1000);
   await ev(`document.querySelector('[data-reset]').click()`); await sleep(1500);
   const back = await ev(`document.querySelector('[data-k="enclos"]').value`);
-  check('remise à zéro : 2 enclos', back === '2', back);
+  const backL = await ev(`(document.querySelector('[data-k="eleveur"]') || {}).value`);
+  check('remise à zéro : éleveur 200, 6 enclos', back === '6' && (backL === undefined || backL === '200'), [back, backL]);
+  // 7 ter. mise à niveau 8 → 9 : l'ancien éleveur 60 par défaut passe à 200 (6 enclos), plus de prix HDV des Makinas, Rune Fo vide → 100 ;
+  // un niveau saisi (83) et un prix de rune saisi restent
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 8, expert: false, eleveur: 60, enclos: 2, optiHdv: { 2: 1 }, runePrices: { 'Rune Fo': null, 'Rune Cha': 250 } }))`);
+  await send('Page.reload'); await sleep(2500);
+  const v9 = await ev(`(() => { const m = document.querySelector('main [data-k="eleveur"]'); return [m && m.value, document.querySelector('main [data-k="enclos"]').value, document.querySelector('#mes-prix [data-k="optiBuy.2"]').placeholder.replace(/[^0-9a-z]/g, ''), document.querySelector('#mes-prix [data-k="runePrices.Rune Fo"]').value, document.querySelector('#mes-prix [data-k="runePrices.Rune Cha"]').value, /HDV [0-9]/.test(document.querySelector('#mes-prix').textContent)].join('|'); })()`);
+  check('version 8 → 9 : éleveur 60 → 200 et 6 enclos, Makina gén. 2 au craft (8 850, plus de prix HDV), Rune Fo 100, Rune Cha saisie gardée', v9 === '200|6|craft8850|100|250|false', v9);
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 8, expert: false, eleveur: 83, enclos: 3 }))`);
+  await send('Page.reload'); await sleep(2500);
+  const v9b = await ev(`document.querySelector('main [data-k="eleveur"]').value + '|' + document.querySelector('main [data-k="enclos"]').value`);
+  check('version 8 → 9 : un niveau d’éleveur saisi (83, 3 enclos) reste', v9b === '83|3', v9b);
   // 7 bis. mise à niveau 5 → 6 : 12 enclos ramenés à 6, anciennes options retirées
   await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 5, expert: true, enclos: 12, parentsOnly: true, cloneKeepsLevel: true, neurone: 36000 }))`);
   await send('Page.reload'); await sleep(2500);
@@ -270,8 +281,8 @@ try {
   check('carburants à 0 : coût 0 sur l’élevage, repère HDV affiché', norm(fb0).startsWith('Carburants:0kamas') && /vaudraient[\d]+kamas/.test(norm(fb0)) && !norm(fb0).includes('vaudraient0kamas'), fb0.slice(0, 160));
   for (const [i, v] of [[0, '12.5'], [1, '363'], [2, '347']]) { await ev(`(() => { const e = document.querySelector('#mes-prix [data-k="fuel.Expérience.${i}"]'); e.value = '${v}'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1200); }
   const fb1 = await ev(`(document.getElementById('carburants') || {}).textContent || ''`);
-  const m1 = norm(fb1).match(/^Carburants:(\d+)kamas.*soit(\d+)parenclos/);
-  check('prix des carburants d’XP saisis : le coût s’affiche, partagé par enclos', m1 && +m1[1] > 0 && Math.abs(+m1[2] * 2 - +m1[1]) <= 2, fb1.slice(0, 160));
+  const m1 = norm(fb1).match(/^Carburants:(\d+)kamas.*soit(\d+)parenclossurtes(\d)enclos/);
+  check('prix des carburants d’XP saisis : le coût s’affiche, partagé par enclos', m1 && +m1[1] > 0 && +m1[3] >= 1 && Math.abs(+m1[2] * +m1[3] - +m1[1]) <= +m1[3], fb1.slice(0, 160));
   check('aucune erreur JavaScript', errors.length === 0, errors);
 } catch (e) { console.log('KO  exception : ' + e.message); ok = false; }
 finally { try { ws && ws.close(); } catch { } ch.kill(); }

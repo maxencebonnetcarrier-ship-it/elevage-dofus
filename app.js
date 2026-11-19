@@ -74,6 +74,14 @@
         if (saved.glourPrice === 30000) delete saved.glourPrice;
         saved.version = 8;
       }
+      // version 8 → 9 : niveau d'éleveur 200 par défaut (l'ancien 60 par défaut repasse à 200, avec tous ses enclos ; un autre niveau saisi reste) ;
+      // Makinas au prix du craft pour toutes les générations (plus de prix HDV) ; Rune Fo, Cha et Age simples à 100 kamas si elles étaient vides
+      if (saved && saved.version === 8) {
+        if (saved.eleveur == null || saved.eleveur === 60) { delete saved.eleveur; if (saved.enclos == null || saved.enclos === 2) delete saved.enclos; }
+        delete saved.optiHdv;
+        if (saved.runePrices) ['Rune Fo', 'Rune Cha', 'Rune Age'].forEach(function (k) { var v = saved.runePrices[k]; if (v === null || v === '') delete saved.runePrices[k]; });
+        saved.version = 9;
+      }
       if (saved && saved.version === d.version) {
         Object.keys(saved).forEach(function (k) {
           if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'scrollPrices' || k === 'ingPrices' || k === 'makina10' || k === 'extract' || k === 'ddBrise' || k === 'sell200' || k === 'calc') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
@@ -85,7 +93,7 @@
     if (d.fertFam === 'Élixir') d.fertFam = 'Potion';
     if (!d.done || typeof d.done !== 'object') d.done = {};
     if (d.barMax == null) d.barMax = 80000;     // 80 000 au niveau d'éleveur 60 (constaté en jeu)
-    if (d.eleveur == null) d.eleveur = 60;
+    if (d.eleveur == null) d.eleveur = 200;      // niveau d'éleveur par défaut : 200, chacun met le sien
     if (!d.planMode) d.planMode = 'renta';       // la stratégie qui compte le coût des Makinas
     if (d.porteurs == null) d.porteurs = true;   // les ratés d'une étape remplacent une couleur demandée plus tard
     if (!(+d.planCount >= 1)) d.planCount = 1;   // combien de dragodindes visées (ex. 100 gén. 10)
@@ -212,10 +220,9 @@
     out += '<h4>Parchemins (prix HDV ; coût chez Eugène Éton : 10, 30, 70, 170 génétons)</h4>' + table(['Caractéristique'].concat(E.SCROLLS.map(function (x) { return x[0] + ' (' + x[1] + ')'; })), E.SCROLL_STATS.map(function (st) {
       return [esc(st)].concat(E.SCROLLS.map(function (x, i) { return numInput('scrollPrices.' + st + '.' + i, (S.scrollPrices[st] || [])[i]); }));
     }));
-    out += '<h4>Optimakinas (ton prix ; vide = le moins cher : craft ou HDV)</h4><div class="pgrid">' + Object.keys(E.OPTI).map(function (g) {
+    out += '<h4>Optimakinas (ton prix ; vide = le prix du craft)</h4><div class="pgrid">' + Object.keys(E.OPTI).map(function (g) {
       var craft = E.optiCraft(+g, S);
-      var hv = (S.optiHdv || {})[g];
-      return '<label class="field">Gén. ' + g + numInput('optiBuy.' + g, S.optiBuy[g], (craft == null ? 'prix ?' : 'craft ' + f(craft)) + (hv ? ' · HDV ' + f(hv) : '')) + '</label>';
+      return '<label class="field">Gén. ' + g + numInput('optiBuy.' + g, S.optiBuy[g], craft == null ? 'prix ?' : 'craft ' + f(craft)) + '</label>';
     }).join('') + '</div>';
     out += '<h4>Ingrédients des Makinas (0 = tu le droppes)</h4><div class="pgrid">' + Object.keys(S.ingPrices || {}).map(function (k) {
       return '<label class="field">' + esc(k) + numInput('ingPrices.' + k, S.ingPrices[k]) + '</label>';
@@ -432,7 +439,7 @@
     out += table(['✓', 'Étape', 'À faire', 'Combien', 'Couple', 'Parents', 'Niveau des parents', 'Chance', 'Accou&shy;plements', 'Jours', 'Stériles et ratés en trop'], rowsA, ['', '', 'l', '', 'l', 'l', '', '', '', '', 'l']);
     out += '<p class="note">Nombres moyens. « Parents » : ceux de l’étape d’avant ; les bébés ratés et les clones (qui repartent au niveau 1) font le reste des accouplements. ' +
       '<b>Clone</b> : sa couleur est celle des deux stériles, <b>jamais celle de leurs parents</b>, et il n’a pas de parents (2 Amande → 1 Amande, même si leur père était une Orchidée). ' +
-      'À une étape A × B, il ne sert que si les deux stériles sont des A ou des B ; deux ratés d’une autre couleur clonés donnent cette autre couleur. ' +
+      'Deux stériles de <b>couleurs différentes</b> donnent l’une ou l’autre, <b>50 % chacune</b>. À une étape A × B, un clone ne sert que s’il est A ou B : chaque stérile A ou B en rend ½ en moyenne, avec n’importe quel partenaire. ' +
       '« Stériles et ratés en trop » : la solution du tableau 6 pour cette couleur. « Porteurs » : un raté garde ses deux parents dans son arbre ; croisé avec le bon partenaire, il vise la même génération, à la même chance, que la couleur qu’il remplace. ' +
       'Seuls les cas où la chance reste la même sont pris (sinon la cible se partage avec une autre couleur). Coche une ligne finie : c’est gardé sur cet appareil.</p>';
 
@@ -477,11 +484,11 @@
       var ns = pl.nodes.filter(function (n) { return n.gen === gg; }), n0 = ns[0], L = n0.L, oc = E.optiCost(gg, s);
       var p0 = E.recovery(n0.A, n0.B, L, L, false, s).p, p1 = E.recovery(n0.A, n0.B, L, L, true, s).p;
       var cr = E.optiCraft(gg, s);
-      return [String(gg), ns.map(function (n) { return dd(n.name); }).join('<br>'), numInput('optiBuy.' + gg, S.optiBuy[gg], cr == null ? 'prix ?' : 'craft ' + f(cr)) + ((S.optiHdv || {})[gg] ? '<br><span class="mini">craft ' + f(cr) + ' · HDV ' + f(S.optiHdv[gg]) + '</span>' : '') + (oc == null ? '' : '<br><span class="mini">compté ' + f(oc) + '</span>'), 'niv. ' + L, pct(p0), '<b>' + pct(p1) + '</b>',
+      return [String(gg), ns.map(function (n) { return dd(n.name); }).join('<br>'), numInput('optiBuy.' + gg, S.optiBuy[gg], cr == null ? 'prix ?' : 'craft ' + f(cr)) + (oc == null ? '' : '<br><span class="mini">compté ' + f(oc) + '</span>'), 'niv. ' + L, pct(p0), '<b>' + pct(p1) + '</b>',
         f(1 / p1, 2), oc == null ? '—' : '<b>' + f(oc / p1) + '</b>', f(1 / p0 - 1 / p1, 2), n0.opti ? '<span class="pill g">oui</span>' : 'non'];
     });
-    out += table(['Gén.', 'Dragodinde', 'Ton prix d’une Makina<br><span class="mini">vide = le moins cher : craft ou HDV</span>', 'Niveau', 'Chance sans', 'Chance avec', 'Makinas par réussite', 'Coût Makina par réussite', 'Accouplements évités par réussite', 'Dans ton plan'], rowsD, ['', 'l']);
-    out += '<p class="note">Une Makina par accouplement (+20 % de chance). Mets ton prix pour chaque génération (une Makina basse est souvent moins chère) : la stratégie du tableau 1 se recalcule. Vide = le moins cher entre le craft (somme des ingrédients, prix moyens HDV du 19/11) et le prix HDV de la Makina. Le craft demande le niveau d’éleveur de la recette (gén. 4 : 69, gén. 5 : 89…).</p>';
+    out += table(['Gén.', 'Dragodinde', 'Ton prix d’une Makina<br><span class="mini">vide = le prix du craft</span>', 'Niveau', 'Chance sans', 'Chance avec', 'Makinas par réussite', 'Coût Makina par réussite', 'Accouplements évités par réussite', 'Dans ton plan'], rowsD, ['', 'l']);
+    out += '<p class="note">Une Makina par accouplement (+20 % de chance). Mets ton prix pour chaque génération (une Makina basse est souvent moins chère) : la stratégie du tableau 1 se recalcule. Vide = le prix du craft (somme des ingrédients, prix moyens HDV du 19/11), pour toutes les générations. Le craft demande le niveau d’éleveur de la recette (gén. 4 : 69, gén. 5 : 89…).</p>';
 
     // ---- 6. quoi faire de chaque monture
     out += h('h3', null, '6. Briser, vendre ou extraire : les dragodindes de ton plan (tes prix de vente niveau 200 ici)');
@@ -552,7 +559,7 @@
       'Une seule ' + esc(X) + ' lance donc une chaîne sans fin ; deux ' + esc(X) + ' stériles clonées en lancent une de plus (« avec clones »), jusqu’à remplir tes ' + pl.places + ' places (2 par tentative). « Pour 50 » : jours en tout, dont la 1re par le plan (« 1re + … » : le temps après elle, clones compris). ' : '') +
       '<b>' + esc(X) + ' × ' + esc(X) + '</b> ne multiplie pas : deux fécondes donnent au mieux un bébé et deux stériles, et le clone de deux stériles ne rend qu’une féconde. ' +
       'Ces bébés ne rapportent aucun généton (ils ne dépassent pas leurs parents) : le gain vient des neurones (' + f(M.mine ? M.mine.valueX : 0) + ' par ' + esc(X) + '). ' +
-      '« Refaire tout le chemin » rapporte des génétons à chaque étape, mais va bien moins vite. Modèle dofuselevage (non officiel) : vérifie la chance dans l’interface d’accouplement du jeu.</p>';
+      '« Refaire tout le chemin » rapporte des génétons à chaque étape, mais va bien moins vite. Chance confirmée en jeu : 42 % pour Prune et Rousse × Rousse, parents niveau 40.</p>';
 
     // ---- 10. par jour selon tes connexions et tes enclos
     out += h('h3', null, '10. ' + esc(X) + ' par jour selon tes connexions et tes enclos');
@@ -838,7 +845,7 @@
         f(c.genetons), f(c.genRe), f(c.used9, 2), '<b>' + f(c.genPer9) + '</b>', otherCost(c)] };
     });
     out += table(['Bébé gén. 10', 'Parents', 'Chance gén. 10', 'Raté recroisé → gén. 10', 'Génétons (parents neufs)', 'Génétons (raté recroisé)', 'Gén. 9 neuves par réussite', 'Génétons par gén. 9 neuve', 'Autre parent : temps de production'], rows, ['l', 'l']);
-    out += '<p class="note">« Gén. 9 neuves par réussite » : en recroisant ratés et clones jusqu’au bout (un raté garde la gén. 9 dans son arbre ; deux stériles de la même couleur se clonent, sans parents). ' +
+    out += '<p class="note">« Gén. 9 neuves par réussite » : en recroisant ratés et clones jusqu’au bout (un raté garde la gén. 9 dans son arbre ; deux stériles se clonent, sans parents : même couleur → cette couleur ; deux couleurs → l’une ou l’autre à 50 %). ' +
       'Un gén. 7 ou 8 comme autre parent rapporte plus de génétons, mais demande bien plus de temps à produire qu’une gén. 1 (dernière colonne). Clique une ligne pour voir toutes les issues.</p>';
     var sel = E.finalCross(S.finalX, L, o, s), mx = sel.items[0].p;
     out += h('h3', null, 'Toutes les issues de ' + esc(sel.A) + ' × ' + esc(sel.B));
@@ -997,7 +1004,7 @@
       field('Sérénité à corriger par fournée', 'seren', 'number', { min: 0 }) +
       field('Montures par enclos', 'perEnclos', 'number', { min: 1, max: 10, step: 1 }) +
       field('Marge de captures', 'capMargin', 'number', { min: 0, max: 3, step: 0.05, note: '0 = capture sûre à 100 % ; 0,25 si tu veux une marge pour les sexes' }) + '</div><div class="form" style="margin-top:10px">' +
-      field('Cloner les stériles (2 stériles de la même couleur → 1 de cette couleur)', 'clone', 'check', { note: 'le clone repart au niveau 1 et n’a pas de parents (constaté en jeu : 2 Amande → 1 Amande)' }) +
+      field('Cloner les stériles (2 stériles → 1 : même couleur → cette couleur ; deux couleurs → l’une ou l’autre à 50 %)', 'clone', 'check', { note: 'le clone repart au niveau 1 et n’a pas de parents (constaté en jeu : 2 Amande → 1 Amande)' }) +
       field('Recroiser les bébés ratés', 'reuse', 'check', { note: 'un raté garde ses deux parents dans son arbre : recroisé, il redonne la génération visée' }) +
       field('Temps par capture (minutes)', 'captureMin', 'number', { min: 0, step: 1, note: 'ton temps de jeu, compté dans « aller le plus vite »' }) + '</div>';
     out += '<p style="margin-top:14px"><button type="button" class="btn" data-reset="1">Remettre les valeurs par défaut</button></p>';
@@ -1068,7 +1075,7 @@
       return bst ? [esc(st), esc(o.runes[0][0].replace('Rune ', '')), f(bst.per, 1), bst.step === 0 ? 'vendre les simples' : '<span class="gold">fusionner en ' + esc(bst.rune.replace('Rune ', '')) + '</span>'] : null;
     }).filter(Boolean);
     if (S.ddBrise && S.ddBrise.fusion === true) out += h('h3', null, 'Vendre les simples ou fusionner ?') + table(['Caractéristique', 'Rune simple', 'Valeur d’une simple', 'Le mieux'], fz);
-    out += '<p class="note">Prix par défaut : hôtel des ventes Ombre relevé le 12/11/2026 sur ta vidéo. Rune Fo, Cha et Age simples n’y sont pas visibles : mets-les si tu les connais. ' +
+    out += '<p class="note">Prix par défaut : hôtel des ventes Ombre relevé le 12/11/2026 sur ta vidéo. Rune Fo, Cha et Age simples : 100 kamas l’unité (ton prix du 19/11). ' +
       'Poids des caractéristiques : DofusDB (Vitalité 0,2 · Initiative 0,1 · Force, Intelligence, Chance, Agilité 1 · Puissance 2 · Prospection 3 · Soins et Critique 10 · Invocation 30 · Portée 51). ' +
       'Bonus maximum : dofuspourlesnoobs (400 Vitalité ; 2 Portée pour la Prune ; 14 % Critique pour l’Émeraude…).</p>';
     return out;
@@ -1147,6 +1154,8 @@
       'Clonage : deux stériles de la <b>même couleur</b> donnent une monture de cette couleur, <b>sans parents</b> (constaté en jeu : 2 Amande → 1 Amande) ; elle repart au <b>niveau 1</b>, jauges à 0 ; la capacité est perdue. ' +
         'Sa couleur ne dépend que des deux stériles, jamais de leurs parents : 2 Amande donnent une Amande, même si leur père était une Orchidée. ' +
         'À l’étape Ébène (Amande et Dorée × Dorée et Rousse), le clone de deux Amande et Dorée sert ; celui de deux ratés Amande donne une Amande, qui ne sert plus à cette étape.',
+      'Clone de deux couleurs différentes : l’une ou l’autre, <b>50 % chacune</b> (confirmé en jeu). En moyenne, le calcul ne change pas : chaque stérile de la bonne couleur rend ½ clone utile, qu’on l’apparie à la même couleur (2 → 1) ou à une autre (50 %).',
+      'X × une capture de son arbre vise la génération de X, à la même chance : <b>42 %</b> pour Prune et Rousse × Rousse, parents niveau 40 (confirmé en jeu).',
       'Une monture est féconde quand l’Amour, l’Endurance et la Maturité atteignent 20 000. Il n’y a pas de carburant « fécondité » : Dragofesse (Amour), Foudroyeur (Endurance), Abreuvoir (Maturité), Caresseur et Baffeur (Sérénité + et −), Mangeoire (XP). Deux jauges actives à la fois par enclos ; une jauge nourrit toutes les montures de l’enclos.',
       'Jauges 3.7 : 200 000 points au maximum ; Extrait jusqu’à 80 000, Philtre 140 000, Potion 180 000, Élixir 200 000 ; 10 / 20 / 30 / 40 points toutes les 10 s selon le palier.',
       'Génétons : seulement si le bébé dépasse toutes les générations des deux arbres ; par parent 2, 4, 8, 16, 30, 60, 120, 240, 500 (gén. 1 à 9).',
@@ -1155,7 +1164,6 @@
     out += h('h3', null, 'Hypothèses (à vérifier en jeu)');
     out += li([
       '<b>Issue d’un raté</b> : modèle de répartition de dofuselevage.fr, non officiel (parents ×8, grands-parents ×3, pénalité selon la génération).',
-      '<b>Clone de deux couleurs différentes</b> : non documenté (tiré au hasard entre les deux selon dofuspourlesnoobs) ; la page ne compte que les clones de deux stériles de la même couleur.',
       '<b>Tours de recroisement</b> : modèle moyen (à chaque tour la moitié de la réserve s’accouple ; ratés et clones y reviennent au niveau 1). En jeu, la chance et les sexes font varier le résultat.',
       '<b>Ton temps de capture</b> : 5 minutes par capture par défaut (réglable dans « Prix et réglages »), compté dans « aller le plus vite ».',
       '<b>Niveau d’une capture</b> : non documenté (niveau 1 par défaut, réglable en haut).',
@@ -1228,6 +1236,6 @@
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'plan'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (prix des Makinas : ingrédients et HDV lus dans ta vidéo du 19/11)';
+  document.getElementById('ver').textContent = ' · version du 19/11/2026 (Makinas au prix du craft, ingrédients lus dans ta vidéo du 19/11 ; éleveur 200 par défaut)';
   render();
 })();

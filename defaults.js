@@ -2,16 +2,18 @@
    Ombre sinon Kourial, novembre 2026) — coût en kamas pour 1 000 points de jauge, recette la moins chère de chaque famille.
    null = aucun prix connu (un ingrédient sans relevé). Tout se modifie dans l'onglet « Prix et réglages ». */
 var DD_DEFAULTS = {
-  version: 8,
+  version: 9,
   target: 'Prune et Rousse',
   objective: 'jours',
-  enclos: 2,
+  eleveur: 200,         // niveau d'éleveur par défaut (choix de l'utilisateur, 19/11/2026) : chacun met le sien
+  enclos: 6,            // tous les enclos débloqués au niveau 200 (paliers 1, 40, 80, 120, 160, 200)
   perEnclos: 10,
   connexions: 2,
   xpFam: 'Extrait',
   fertFam: 'Extrait',
   capLevel: 1,
-  clone: true,          // 2 stériles de la même couleur → 1 de cette couleur, sans parents, au niveau 1 (constaté en jeu : 2 Amande → 1 Amande)
+  clone: true,          // 2 stériles de la même couleur → 1 de cette couleur, sans parents, au niveau 1 (constaté en jeu : 2 Amande → 1 Amande) ;
+                        // 2 stériles de couleurs différentes → l'une ou l'autre, 50 % chacune (confirmé par l'utilisateur, 19/11/2026)
   reuse: true,          // recroiser les bébés ratés : ils gardent leurs deux parents dans leur arbre (génétique parents + grands-parents)
   allowOpti: true,
   captureMin: 5,        // ton temps par capture (minutes), compté dans l'objectif « aller le plus vite »
@@ -47,9 +49,9 @@ var DD_DEFAULTS = {
     'Fémur du Chafer Rōnin': 338, 'La cambriole pour les Nuls': 690, 'Pierre du Craqueleur Légendaire': 393, 'Groin de Dragon Cochon': 792,
     'Bourgeon explosif de Damadrya': 9561, 'Laine du Royalmouth': 2000, 'Pistil du Tynril': 2779, "Mèche Rebelle d'Hell Mina": 40606
   },
+  // ton prix d'une Optimakina par génération ; vide = le prix du craft (somme des ingrédients), pour toutes les générations
+  // (choix de l'utilisateur, 19/11/2026 : pas de prix HDV des gén. 8 à 10, donc le craft partout)
   optiBuy: {},
-  // prix moyen HDV des Optimakinas elles-mêmes (même vidéo) ; gén. 8 à 10 non survolées. La page prend le moins cher : craft ou HDV.
-  optiHdv: { 2: 8155, 3: 9583, 4: 23598, 5: 16846, 6: 10049, 7: 39999 },
   // prix de vente d'une dragodinde au niveau 200, à TON prix (vide = elle ne se vend pas) : { 'Prune': 500000, ... }
   sell200: {},
   // calculateur par dragodinde (comme muldo-calculator) : lots de captures, niveau, Optimakina, tours de recroisement
@@ -82,12 +84,12 @@ var DD_DEFAULTS = {
     "Expérience": ["Grand Extrait d'Expérience de monture","Philtre d'Expérience de monture","Grande Potion d'Expérience de monture","—"]
   },
   // prix des runes : hôtel des ventes Ombre, relevés le 12/11/2026 sur la vidéo de l'utilisateur (runes.mp4).
-  // Rune Fo, Cha et Age simples : hors de l'écran dans la vidéo → à saisir (la Pa et la Ra suffisent en attendant, par fusion).
+  // Rune Fo, Cha et Age simples : hors de l'écran dans la vidéo ; 100 kamas l'unité (prix de l'utilisateur, 19/11/2026).
   runePrices: {
     'Rune Vi': 95, 'Rune Pa Vi': 320, 'Rune Ra Vi': 1044, 'Rune Ga Pa': 15566, 'Rune Ga Pme': 14139,
-    'Rune Ini': 33, 'Rune Pa Ini': 133, 'Rune Ra Ini': 353, 'Rune Fo': null, 'Rune Pa Fo': 127, 'Rune Ra Fo': 346,
-    'Rune Ine': 51, 'Rune Pa Ine': 141, 'Rune Ra Ine': 318, 'Rune Cha': null, 'Rune Pa Cha': 140, 'Rune Ra Cha': 527,
-    'Rune Age': null, 'Rune Pa Age': 253, 'Rune Ra Age': 674, 'Rune Pui': 109, 'Rune Pa Pui': 396, 'Rune Ra Pui': 1335,
+    'Rune Ini': 33, 'Rune Pa Ini': 133, 'Rune Ra Ini': 353, 'Rune Fo': 100, 'Rune Pa Fo': 127, 'Rune Ra Fo': 346,
+    'Rune Ine': 51, 'Rune Pa Ine': 141, 'Rune Ra Ine': 318, 'Rune Cha': 100, 'Rune Pa Cha': 140, 'Rune Ra Cha': 527,
+    'Rune Age': 100, 'Rune Pa Age': 253, 'Rune Ra Age': 674, 'Rune Pui': 109, 'Rune Pa Pui': 396, 'Rune Ra Pui': 1335,
     'Rune Prospe': 168, 'Rune Pa Prospe': 399, 'Rune So': 167, 'Rune Pa So': 746, 'Rune Invo': 1961, 'Rune Cri': 760, 'Rune Po': 3501
   },
   // brisage des dragodindes : taux fixe de 50 % pour les montures, niveau de l'objet = niveau de la monture, bonus à leur maximum

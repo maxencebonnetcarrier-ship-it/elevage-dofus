@@ -115,6 +115,8 @@
      Clonage (constaté en jeu) : deux stériles de la MÊME couleur donnent une monture de cette couleur, SANS PARENTS
      (2 Amande → 1 Amande, même si leur père était une Orchidée : seule compte la couleur des stériles), au niveau 1. Un clone n'est donc utile que s'il est de la couleur A ou B : deux ratés stériles
      d'une autre couleur donnent une monture qui a perdu la recette.
+     Deux stériles de couleurs DIFFÉRENTES (confirmé par l'utilisateur) : l'une ou l'autre, 50 % chacune. En moyenne, chaque stérile de couleur
+     A ou B rend donc ½ clone utile, quel que soit son partenaire (même couleur : 2 → 1 ; autre couleur : ½) : c / 2 par stérile, exact.
      c = part de la réserve de couleur A ou B (neufs, clones, ratés nés A ou B) ; r = part des ratés nés de couleur A ou B.
      Y = réussites par parent neuf après k tours ; left = ce qui reste de la réserve (par parent neuf). */
   function canRecycle(s) { return s.reuse !== false || !!s.clone; }
@@ -229,11 +231,9 @@
     if (o.glour && gl === null) return null;
     return t + o.queues * (q || 0) + (o.glour ? gl : 0);
   }
-  function optiCost(gen, s) {   // ton prix saisi s'il y en a un ; sinon le moins cher entre le craft (somme des ingrédients) et l'HDV
+  function optiCost(gen, s) {   // ton prix saisi s'il y en a un ; sinon le prix du craft (somme des ingrédients), pour toutes les générations
     var buy = num(s.optiBuy && s.optiBuy[gen]);
-    if (buy !== null) return buy;
-    var cr = optiCraft(gen, s), hdv = num(s.optiHdv && s.optiHdv[gen]);
-    return cr === null ? hdv : (hdv === null ? cr : Math.min(cr, hdv));
+    return buy !== null ? buy : optiCraft(gen, s);
   }
 
   /* Parents neufs par côté pour `need` réussites en k tours.

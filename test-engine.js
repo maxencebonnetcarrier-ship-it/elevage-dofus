@@ -182,8 +182,10 @@ t('fusion : chaque rune simple vaut le meilleur de son prix, Pa ÷ 3 et Ra ÷ 9 
   assert.deepStrictEqual(pick('Vitalité'), ['Rune Ra Vi', 116]);
   assert.deepStrictEqual(pick('Initiative'), ['Rune Pa Ini', 44.3]);
   assert.deepStrictEqual(pick('Intelligence'), ['Rune Ine', 51]);
-  assert.deepStrictEqual(pick('Force'), ['Rune Pa Fo', 42.3]);   // Rune Fo simple sans prix : la Pa sert
-  assert.deepStrictEqual(pick('Chance'), ['Rune Ra Cha', 58.6]);
+  assert.deepStrictEqual(pick('Force'), ['Rune Fo', 100]);   // Rune Fo, Cha et Age simples : 100 kamas (prix de l'utilisateur, 19/11)
+  assert.deepStrictEqual(pick('Chance'), ['Rune Cha', 100]);
+  assert.deepStrictEqual(pick('Agilité'), ['Rune Age', 100]);
+  assert.deepStrictEqual(E.bestPerSimple(st['Force'], Object.assign({}, P, { 'Rune Fo': null })).rune, 'Rune Pa Fo');   // vide : la Pa sert
   assert.deepStrictEqual(pick('Soins'), ['Rune Pa So', 248.7]);
   assert.strictEqual(E.bestPerSimple({ runes: [['X', 1]] }, {}), null);
 });
@@ -199,7 +201,7 @@ t('parchemins : un généton vaut le parchemin le plus rentable (prix × (1 − 
   const pl = { target: 'Prune et Rousse', genetons: 1000 };
   near(E.resultValue(pl, S).genetons, 1000 * 10009 * 0.99 / 10, 1e-6);
 });
-t('Optimakinas : craft = somme des ingrédients aux prix moyens HDV de la vidéo (19/11) ; coût = ton prix, sinon le moins cher craft / HDV', () => {
+t('Optimakinas : craft = somme des ingrédients aux prix moyens HDV de la vidéo (19/11) ; coût = ton prix, sinon le craft pour toutes les générations', () => {
   // recalcul à la main : Pépite 518, Sueur 1 773, Pic doré 1 559, Pic 645, Queue sauvage 649, Queue de Glourséleste 35 535
   const base = 10 * 518;
   near(E.optiCraft(2, S), 338 + base + 1773 + 1559, 1e-9);                                   // 8 850
@@ -211,8 +213,10 @@ t('Optimakinas : craft = somme des ingrédients aux prix moyens HDV de la vidéo
   near(E.optiCraft(8, S), 2779 + base + 1773 + 3 * 1559 + 2 * 645 + 2 * 649, 1e-9);          // 16 997
   near(E.optiCraft(9, S), 40606 + base + 2 * 1773 + 3 * 1559 + 2 * 645 + 3 * 649, 1e-9);     // 57 246
   near(E.optiCraft(10, S), base + 3 * 1773 + 3 * 1559 + 3 * 645 + 3 * 649 + 35535, 1e-9);    // 54 593
-  // le moins cher : HDV pour les gén. 2, 3 et 6 ; craft pour les autres
-  near(E.optiCost(2, S), 8155, 1e-9); near(E.optiCost(6, S), 10049, 1e-9); near(E.optiCost(4, S), 10199, 1e-9); near(E.optiCost(9, S), 57246, 1e-9);
+  // plus de prix HDV : le craft partout, même si un ancien prix HDV traîne dans les réglages
+  assert.strictEqual(S.optiHdv, undefined);
+  for (let g = 2; g <= 10; g++) near(E.optiCost(g, S), E.optiCraft(g, S), 1e-9, 'gén. ' + g);
+  near(E.optiCost(2, Object.assign({}, S, { optiHdv: { 2: 8155 } })), 8850, 1e-9);
   near(E.optiCost(10, Object.assign({}, S, { optiBuy: { 10: 90000 } })), 90000, 1e-12);   // un prix saisi l'emporte
   const s = Object.assign({}, S, { ingPrices: Object.assign({}, S.ingPrices, { 'Pistil du Tynril': 12000 }), queuePrice: 1000 });
   near(E.optiCraft(8, s), 12000 + base + 1773 + 3 * 1559 + 2 * 645 + 2 * 1000, 1e-9);
@@ -334,7 +338,7 @@ t('multiplier : gén. 10 × gén. 10 ne grandit jamais (2 au départ → jamais 
   const X = 'Prune et Rousse';
   const self = E.multiply(X, S, { method: 'self', L: 167, opti: true, N: [10], start: 2 });
   assert.strictEqual(self.reach[10], null); assert.ok(self.maxReach < 4.01);
-  const a = E.multiply(X, S, { L: 40, N: [50] }), b = E.multiply(X, Object.assign({}, S, { enclos: 4 }), { L: 40, N: [50] });
+  const a = E.multiply(X, Object.assign({}, S, { enclos: 2 }), { L: 40, N: [50] }), b = E.multiply(X, Object.assign({}, S, { enclos: 4 }), { L: 40, N: [50] });
   assert.ok(a.reach[50] && b.reach[50] && b.reach[50].days < a.reach[50].days && b.perDay > a.perDay);
   near(a.perDay, Math.floor(20 / 2) * 24 / a.T * a.pEff, 1e-9);
 });
@@ -351,5 +355,41 @@ t('clonage (constaté en jeu) : deux stériles de la même couleur → cette cou
   const ns = E.recovery('Amande et Dorée', 'Dorée et Rousse', 60, 60, false, S);
   assert.ok(ns.rA + ns.rB > 0 && ns.rA + ns.rB < 1, ns.rA + ns.rB);
 });
+// clone de deux stériles de couleurs différentes : l'une ou l'autre, 50 % chacune (confirmé par l'utilisateur, 19/11/2026)
+function cloneExpect(colors, useful) {   // clones utiles attendus, moyenne sur TOUS les appariements possibles des stériles
+  let tot = 0, cnt = 0;
+  (function go(rest, acc) {
+    if (!rest.length) { tot += acc; cnt++; return; }
+    const a = rest[0];
+    for (let i = 1; i < rest.length; i++) {
+      const b = rest[i], ua = useful.includes(a), ub = useful.includes(b);
+      const v = a === b ? (ua ? 1 : 0) : (ua ? 0.5 : 0) + (ub ? 0.5 : 0);
+      go(rest.slice(1, i).concat(rest.slice(i + 1)), acc + v);
+    }
+  })(colors, 0);
+  return tot / cnt;
+}
+t('clone de deux couleurs différentes (50 %) : chaque stérile A ou B rend ½ clone utile, quel que soit l’appariement (le moteur compte c / 2)', () => {
+  const U = ['A', 'B'];
+  near(cloneExpect(['A', 'A', 'B', 'C', 'C', 'D'], U), 3 / 2, 1e-12);
+  near(cloneExpect(['A', 'C', 'D', 'E'], U), 1 / 2, 1e-12);
+  near(cloneExpect(['A', 'B', 'B', 'B', 'C', 'C', 'D', 'E'], U), 4 / 2, 1e-12);
+  near(cloneExpect(['C', 'C', 'D', 'D'], U), 0, 1e-12);
+  // le moteur : une réserve toute A ou B (c = 1), aucune réussite, ratés non recroisés → 1 stérile rend ½ clone au tour suivant
+  near(E.poolSeries(0, { reuse: false, clone: true }, 0, 2).left, 1 / 4, 1e-12);
+  // une réserve à moitié A ou B : c / 2 par stérile ; recroisés (1 − p) + clones (c) par paire
+  const p = 0.5, r = 0.4, n1 = (1 - p + 1) / 2, c1 = ((1 - p) * r + 1) / (1 - p + 1), n2 = n1 * ((1 - p) + c1) / 2;
+  near(E.poolSeries(p, { reuse: true, clone: true }, r, 2).left, n2, 1e-12);
+});
+t('chance confirmée en jeu : Prune et Rousse × Rousse, parents niveau 40 → 42 %', () => {
+  const st = E.chainP('Prune et Rousse', 'Rousse', 40, false, S);
+  near(st.p, 0.42, 0.005);
+  assert.strictEqual(E.partnerFor('Prune et Rousse', 40, false, S).c, 'Rousse');
+});
+t('réglages par défaut : éleveur 200, 6 enclos (tous débloqués)', () => {
+  assert.strictEqual(DEF.version, 9); assert.strictEqual(DEF.eleveur, 200); assert.strictEqual(DEF.enclos, 6);
+  assert.strictEqual(E.placesOf(S), 60);
+});
+
 console.log(`\n${n - fails}/${n} tests verts`);
 process.exit(fails ? 1 : 0);
