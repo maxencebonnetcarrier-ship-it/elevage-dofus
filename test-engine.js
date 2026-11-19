@@ -77,7 +77,12 @@ t('réserve par tours : 1 tour = 2/p parents neufs par réussite, quels que soie
     for (const p of [0.3, 0.62, 1]) near(E.freshFor(1, p, 1, s), 2 / p, 1e-9, `${reuse}/${clone}/${p}`);
   }
   const p = 0.5;
-  near(E.freshFor(1, p, 500, Object.assign({}, S, { reuse: true, clone: true })), 1, 1e-6);           // une réussite sort de la réserve : 1 neuf par réussite
+  // ratés et clones : si tous les ratés naissent de la couleur d'un parent (r = 1), chaque stérile se clone utilement → 1 neuf par réussite
+  near(E.freshFor(1, p, 500, Object.assign({}, S, { reuse: true, clone: true }), 1), 1, 1e-6);
+  // r = 0 : les ratés stériles clonés n'ont plus la recette (clone sans parents) ; recalcul indépendant de la réserve tour par tour
+  let n = 1, c = 1, Y = 0; for (let t = 0; t < 500; t++) { Y += p / 2 * n; const nx = n * ((1 - p) + c) / 2; c = c / ((1 - p) + c); n = nx; }
+  near(E.freshFor(1, p, 500, Object.assign({}, S, { reuse: true, clone: true }), 0), 1 / Y, 1e-6);
+  assert.ok(1 / Y > 1.4 && 1 / Y < 1.6, 1 / Y);
   near(E.freshFor(1, p, 500, Object.assign({}, S, { reuse: false, clone: true })), 1 / p, 1e-6);      // clones seuls (muldo-calculator : ×2 tentatives)
   near(E.freshFor(1, p, 500, Object.assign({}, S, { reuse: true, clone: false })), (1 + p) / p, 1e-6); // ratés seuls
   near(E.freshFor(1, p, 2, Object.assign({}, S, { reuse: true, clone: true })), 1 / (1 - 0.75 * 0.75), 1e-9);
@@ -321,6 +326,19 @@ t('multiplier : gén. 10 × gén. 10 ne grandit jamais (2 au départ → jamais 
   const a = E.multiply(X, S, { L: 40, N: [50] }), b = E.multiply(X, Object.assign({}, S, { enclos: 4 }), { L: 40, N: [50] });
   assert.ok(a.reach[50] && b.reach[50] && b.reach[50].days < a.reach[50].days && b.perDay > a.perDay);
   near(a.perDay, Math.floor(20 / 2) * 24 / a.T * a.pEff, 1e-9);
+});
+t('clonage (constaté en jeu) : deux stériles de la même couleur → cette couleur, sans parents ; un clone de ratés ne garde pas la recette', () => {
+  const s = Object.assign({}, S, { reuse: true, clone: true }), p = 0.48;
+  // plus les ratés naissent de la couleur d'un parent, plus les clones servent : moins de parents neufs
+  const f0 = E.freshFor(1, p, 5, s, 0), f5 = E.freshFor(1, p, 5, s, 0.5), f1 = E.freshFor(1, p, 5, s, 1);
+  assert.ok(f0 > f5 && f5 > f1, [f0, f5, f1].join(' '));
+  // 2 tours : pas encore de clone de ratés, la part ne joue pas
+  near(E.freshFor(1, p, 2, s, 0), E.freshFor(1, p, 2, s, 1), 1e-12);
+  // sans clonage, la part ne joue jamais
+  near(E.freshFor(1, p, 6, Object.assign({}, s, { clone: false }), 0), E.freshFor(1, p, 6, Object.assign({}, s, { clone: false }), 1), 1e-12);
+  // le plan utilise la part réelle des ratés de la couleur d'un parent (dofuselevage) pour chaque étape
+  const ns = E.recovery('Amande et Dorée', 'Dorée et Rousse', 60, 60, false, S);
+  assert.ok(ns.rA + ns.rB > 0 && ns.rA + ns.rB < 1, ns.rA + ns.rB);
 });
 console.log(`\n${n - fails}/${n} tests verts`);
 process.exit(fails ? 1 : 0);

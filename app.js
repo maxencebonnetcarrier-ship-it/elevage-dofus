@@ -416,6 +416,7 @@
     out += '<div class="prog"><div class="pbar"><i style="width:' + Math.round(nDone / Math.max(1, nAll) * 100) + '%"></i></div><span><b>' + nDone + ' / ' + nAll + '</b> lignes faites</span></div>';
     out += table(['✓', 'Étape', 'À faire', 'Combien', 'Couple', 'Parents', 'Niveau des parents', 'Chance', 'Accou&shy;plements', 'Jours', 'Stériles et ratés en trop'], rowsA, ['', '', 'l', '', 'l', 'l', '', '', '', '', 'l']);
     out += '<p class="note">Nombres moyens. « Parents » : ceux de l’étape d’avant ; les bébés ratés et les clones (qui repartent au niveau 1) font le reste des accouplements. ' +
+      '<b>Clone</b> : deux stériles de la même couleur donnent cette couleur, <b>sans parents</b> (2 Amande → 1 Amande) ; clone les stériles de la couleur d’un parent de l’étape, pas deux ratés : ils perdraient la recette. ' +
       '« Stériles et ratés en trop » : la solution du tableau 6 pour cette couleur. « Porteurs » : un raté garde ses deux parents dans son arbre ; croisé avec le bon partenaire, il vise la même génération, à la même chance, que la couleur qu’il remplace. ' +
       'Seuls les cas où la chance reste la même sont pris (sinon la cible se partage avec une autre couleur). Coche une ligne finie : c’est gardé sur cet appareil.</p>';
 
@@ -821,7 +822,7 @@
         f(c.genetons), f(c.genRe), f(c.used9, 2), '<b>' + f(c.genPer9) + '</b>', otherCost(c)] };
     });
     out += table(['Bébé gén. 10', 'Parents', 'Chance gén. 10', 'Raté recroisé → gén. 10', 'Génétons (parents neufs)', 'Génétons (raté recroisé)', 'Gén. 9 neuves par réussite', 'Génétons par gén. 9 neuve', 'Autre parent : temps de production'], rows, ['l', 'l']);
-    out += '<p class="note">« Gén. 9 neuves par réussite » : en recroisant ratés et clones jusqu’au bout (un raté garde la gén. 9 dans son arbre ; deux stériles de même génération se clonent). ' +
+    out += '<p class="note">« Gén. 9 neuves par réussite » : en recroisant ratés et clones jusqu’au bout (un raté garde la gén. 9 dans son arbre ; deux stériles de la même couleur se clonent, sans parents). ' +
       'Un gén. 7 ou 8 comme autre parent rapporte plus de génétons, mais demande bien plus de temps à produire qu’une gén. 1 (dernière colonne). Clique une ligne pour voir toutes les issues.</p>';
     var sel = E.finalCross(S.finalX, L, o, s), mx = sel.items[0].p;
     out += h('h3', null, 'Toutes les issues de ' + esc(sel.A) + ' × ' + esc(sel.B));
@@ -980,7 +981,7 @@
       field('Sérénité à corriger par fournée', 'seren', 'number', { min: 0 }) +
       field('Montures par enclos', 'perEnclos', 'number', { min: 1, max: 10, step: 1 }) +
       field('Marge de captures', 'capMargin', 'number', { min: 0, max: 3, step: 0.05, note: '0 = capture sûre à 100 % ; 0,25 si tu veux une marge pour les sexes' }) + '</div><div class="form" style="margin-top:10px">' +
-      field('Cloner les stériles (2 stériles de même génération → 1 fertile)', 'clone', 'check', { note: 'le clone repart au niveau 1 (constaté en jeu) et garde l’arbre d’un des deux stériles' }) +
+      field('Cloner les stériles (2 stériles de la même couleur → 1 de cette couleur)', 'clone', 'check', { note: 'le clone repart au niveau 1 et n’a pas de parents (constaté en jeu : 2 Amande → 1 Amande)' }) +
       field('Recroiser les bébés ratés', 'reuse', 'check', { note: 'un raté garde ses deux parents dans son arbre : recroisé, il redonne la génération visée' }) +
       field('Temps par capture (minutes)', 'captureMin', 'number', { min: 0, step: 1, note: 'ton temps de jeu, compté dans « aller le plus vite »' }) + '</div>';
     out += '<p style="margin-top:14px"><button type="button" class="btn" data-reset="1">Remettre les valeurs par défaut</button></p>';
@@ -1127,7 +1128,8 @@
       '6 enclos de 10 places au plus, débloqués aux niveaux d’éleveur 1, 40, 80, 120, 160 et 200 (guide de l’éleveur).',
       'Chance de la génération cible = 30 % + 0,15 % × (niveau du parent A + niveau du parent B) ; Optimakina +20 % depuis la 3.7 (+10 % avant) ; Takeza +20 %. Deux parents niveau 167 + Optimakina = 100 % ; deux niveau 200 sans Optimakina = 90 %.',
       'Naissance immédiate, bébé niveau 1 jauges à 0 ; les deux parents deviennent stériles.',
-      'Clonage : deux stériles de même génération donnent un fertile, qui garde l’arbre d’un des deux ; il repart au <b>niveau 1</b> (constaté en jeu), jauges à 0 ; la capacité est perdue.',
+      'Clonage : deux stériles de la <b>même couleur</b> donnent une monture de cette couleur, <b>sans parents</b> (constaté en jeu : 2 Amande → 1 Amande) ; elle repart au <b>niveau 1</b>, jauges à 0 ; la capacité est perdue. ' +
+        'Deux ratés clonés perdent donc la recette : seul le clone de deux stériles de la couleur d’un parent de l’étape sert à la recroiser.',
       'Une monture est féconde quand l’Amour, l’Endurance et la Maturité atteignent 20 000. Il n’y a pas de carburant « fécondité » : Dragofesse (Amour), Foudroyeur (Endurance), Abreuvoir (Maturité), Caresseur et Baffeur (Sérénité + et −), Mangeoire (XP). Deux jauges actives à la fois par enclos ; une jauge nourrit toutes les montures de l’enclos.',
       'Jauges 3.7 : 200 000 points au maximum ; Extrait jusqu’à 80 000, Philtre 140 000, Potion 180 000, Élixir 200 000 ; 10 / 20 / 30 / 40 points toutes les 10 s selon le palier.',
       'Génétons : seulement si le bébé dépasse toutes les générations des deux arbres ; par parent 2, 4, 8, 16, 30, 60, 120, 240, 500 (gén. 1 à 9).',
@@ -1136,7 +1138,7 @@
     out += h('h3', null, 'Hypothèses (à vérifier en jeu)');
     out += li([
       '<b>Issue d’un raté</b> : modèle de répartition de dofuselevage.fr, non officiel (parents ×8, grands-parents ×3, pénalité selon la génération).',
-      '<b>Clone</b> : dofuspourlesnoobs et le calculateur Muldo le disent tiré <b>au hasard</b> entre les deux stériles. Pour choisir, clone deux stériles de la même couleur (ou du même sexe).',
+      '<b>Clone de deux couleurs différentes</b> : non documenté (tiré au hasard entre les deux selon dofuspourlesnoobs) ; la page ne compte que les clones de deux stériles de la même couleur.',
       '<b>Tours de recroisement</b> : modèle moyen (à chaque tour la moitié de la réserve s’accouple ; ratés et clones y reviennent au niveau 1). En jeu, la chance et les sexes font varier le résultat.',
       '<b>Ton temps de capture</b> : 5 minutes par capture par défaut (réglable dans « Prix et réglages »), compté dans « aller le plus vite ».',
       '<b>Niveau d’une capture</b> : non documenté (niveau 1 par défaut, réglable en haut).',
@@ -1209,6 +1211,6 @@
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'plan'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (en faire d’autres après la première : gén. 10 × capture ; par jour selon connexions et enclos ; prix des Makinas par génération)';
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (clonage : 2 stériles de la même couleur → cette couleur, sans parents)';
   render();
 })();

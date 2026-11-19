@@ -11,7 +11,7 @@ var DD_DEFAULTS = {
   xpFam: 'Extrait',
   fertFam: 'Extrait',
   capLevel: 1,
-  clone: true,          // 2 stériles de même génération → 1 fertile ; le clone repart au niveau 1 (constaté en jeu)
+  clone: true,          // 2 stériles de la même couleur → 1 de cette couleur, sans parents, au niveau 1 (constaté en jeu : 2 Amande → 1 Amande)
   reuse: true,          // recroiser les bébés ratés : ils gardent leurs deux parents dans leur arbre (génétique parents + grands-parents)
   allowOpti: true,
   captureMin: 5,        // ton temps par capture (minutes), compté dans l'objectif « aller le plus vite »

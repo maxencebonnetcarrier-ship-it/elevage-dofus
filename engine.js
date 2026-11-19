@@ -109,22 +109,27 @@
     });
     return (FAIL_CACHE[ck] = { pRe: w ? pRe / w : o.pTarget, genF: w ? genF / w : 0, fails: fails, other: other });
   }
-  /* Réserve de parents d'une étape, suivie par TOURS (modèle moyen) : à chaque tour la moitié de la réserve s'accouple ;
-     les deux parents deviennent stériles ; avec le clonage deux stériles redonnent un fertile (niveau 1) ; en recroisant
-     les ratés, chaque bébé raté revient dans la réserve ; une réussite en sort.
-     d = part de la réserve qui reste après un tour ; y = réussites par parent neuf si on recroise jusqu'au bout. */
-  function poolParams(p, s) {
-    var reuse = s.reuse !== false, cl = !!s.clone;
-    if (reuse && cl) return { d: 1 - p / 2, y: 1 };
-    if (reuse) return { d: (1 - p) / 2, y: p / (1 + p) };
-    if (cl) return { d: 0.5, y: p };
-    return { d: 0, y: p / 2 };
+  /* Réserve de parents d'une étape A × B, suivie par TOURS (modèle moyen). À chaque tour toute la réserve s'accouple par paires ;
+     les deux parents deviennent stériles ; une réussite sort de la réserve.
+     Ratés recroisés : chaque bébé raté revient (il garde A et B dans son arbre, il vise encore la cible).
+     Clonage (constaté en jeu) : deux stériles de la MÊME couleur donnent une monture de cette couleur, SANS PARENTS
+     (2 Amande → 1 Amande), au niveau 1. Un clone n'est donc utile que s'il est de la couleur A ou B : deux ratés stériles
+     d'une autre couleur donnent une monture qui a perdu la recette.
+     c = part de la réserve de couleur A ou B (neufs, clones, ratés nés A ou B) ; r = part des ratés nés de couleur A ou B.
+     Y = réussites par parent neuf après k tours ; left = ce qui reste de la réserve (par parent neuf). */
+  function canRecycle(s) { return s.reuse !== false || !!s.clone; }
+  function poolSeries(p, s, r, k) {
+    var reuse = s.reuse !== false, cl = !!s.clone, n = 1, c = 1, Y = 0, kk = canRecycle(s) ? Math.max(1, k || 1) : 1;
+    for (var t = 0; t < kk && n > 1e-12; t++) {
+      Y += p / 2 * n;
+      var ret = reuse ? 1 - p : 0, cln = cl ? c : 0;
+      c = ret + cln > 0 ? (ret * (r || 0) + cln) / (ret + cln) : 0;
+      n = n * (ret + cln) / 2;
+    }
+    return { Y: Y, left: n };
   }
-  // parents neufs pour `need` réussites en `k` tours (1 tour = tout en parallèle, sans recroiser)
-  function freshFor(need, p, k, s) {
-    var pp = poolParams(p, s), kk = pp.d <= 0 ? 1 : Math.max(1, k || 1);
-    return need / (pp.y * (1 - Math.pow(pp.d, kk)));
-  }
+  // parents neufs pour `need` réussites en `k` tours (1 tour = tout en parallèle, sans recroiser) ; r : part des ratés de couleur A ou B
+  function freshFor(need, p, k, s, r) { return need / poolSeries(p, s, r, k).Y; }
 
   // ---------------------------------------------------------------- jauges, XP, temps, coûts
   function tierOf(l) { for (var k = 0; k < 4; k++) if (l <= CAPS[k]) return k; return 3; }
@@ -234,9 +239,9 @@
      Étape déséquilibrée (ex. Prune × Rousse) avec ratés recroisés : chaque neuf du côté le plus avancé lance une « chaîne » ;
      un raté le remplace (il garde la recette dans son arbre) et la chaîne s'arrête à la réussite : en k tours elle réussit avec
      1 − (1 − p)^k. Côté le moins avancé : un neuf par tentative, moins les clones de ses stériles revenus au tour suivant. */
-  function freshSplit(need, p, k, A, B, s) {
+  function freshSplit(need, p, k, A, B, s, r) {
     var gA = TREE[A].gen, gB = TREE[B].gen, kk = Math.max(1, k || 1);
-    if (s.reuse === false || gA === gB || poolParams(p, s).d <= 0) { var N0 = freshFor(need, p, kk, s); return { A: N0 / 2, B: N0 / 2 }; }
+    if (s.reuse === false || gA === gB) { var N0 = freshFor(need, p, kk, s, r); return { A: N0 / 2, B: N0 / 2 }; }
     var hi = need / (1 - Math.pow(1 - p, kk)), lo = need / p * (1 - (s.clone ? 0.5 * (kk - 1) / kk : 0));
     return gA > gB ? { A: hi, B: lo } : { A: lo, B: hi };
   }
@@ -254,9 +259,9 @@
     var key = X + '|' + pol.L + '|' + (pol.opti ? 1 : 0) + '|' + (pol.k || 1);
     if (c[key]) return c[key];
     var A = TREE[X].p[0], B = TREE[X].p[1], rec = recovery(A, B, pol.L, pol.L, pol.opti, s), p = rec.p;
-    var k = poolParams(p, s).d <= 0 ? 1 : Math.max(1, pol.k || 1);
-    var sp = freshSplit(1, p, k, A, B, s);
-    return (c[key] = { A: A, B: B, p: p, rA: rec.rA, rB: rec.rB, k: k, shareA: sp.A, shareB: sp.B,
+    var k = canRecycle(s) ? Math.max(1, pol.k || 1) : 1, r = rec.rA + rec.rB;
+    var sp = freshSplit(1, p, k, A, B, s, r);
+    return (c[key] = { A: A, B: B, p: p, rA: rec.rA, rB: rec.rB, r: r, k: k, shareA: sp.A, shareB: sp.B,
       lvA: levelCost(startLevel(A, s), pol.L, s), lvB: levelCost(startLevel(B, s), pol.L, s),
       prepA: prepHours(startLevel(A, s), pol.L, s), prepB: prepHours(startLevel(B, s), pol.L, s), prep1: prepHours(1, pol.L, s),
       fs: failStats(A, B, pol.L, pol.opti, s) });
@@ -279,12 +284,12 @@
     });
     return (CARRY_CACHE[ck] = w ? acc / w : 0);
   }
-  // montures qui restent à la fin d'une étape (elles portent ses deux parents)
-  function leftoverOf(fA, fB, att, p, k, A, B, s) {
-    var pp = poolParams(p, s), lo = 0;
+  // montures qui restent à la fin d'une étape : ratés (ils portent ses deux parents) et clones de la couleur d'un parent
+  function leftoverOf(fA, fB, att, p, k, A, B, s, r) {
+    var lo = 0;
     if (s.reuse === false) lo += att * (1 - p);                                   // ratés jamais recroisés
-    if (s.reuse !== false && TREE[A].gen !== TREE[B].gen && pp.d > 0) lo += (TREE[A].gen > TREE[B].gen ? fA : fB) * Math.pow(1 - p, k);   // chaînes encore ratées
-    else if (pp.d > 0) lo += (fA + fB) * Math.pow(pp.d, k);                       // réserve restante après k tours
+    if (s.reuse !== false && TREE[A].gen !== TREE[B].gen) lo += (TREE[A].gen > TREE[B].gen ? fA : fB) * Math.pow(1 - p, k);   // chaînes encore ratées
+    else if (canRecycle(s)) lo += (fA + fB) * poolSeries(p, s, r, k).left;       // réserve restante après k tours
     return lo;
   }
   function plan(target, policy, s) {
@@ -308,7 +313,7 @@
       (usesBy[B] = usesBy[B] || []).push({ gen: g, amt: fB, T: X, L: pol.L, opti: !!pol.opti, node: node });
       // ce qui reste de cette étape remplace des A et des B demandés plus tard (générations au-dessus)
       if (s.porteurs !== false) {
-        var lo = leftoverOf(fA, fB, att, p, k, A, B, s);
+        var lo = leftoverOf(fA, fB, att, p, k, A, B, s, ns.r);
         [A, B].forEach(function (C) {
           (usesBy[C] || []).forEach(function (u) {
             if (lo <= 1e-9 || u.gen <= g || u.amt <= 1e-9) return;
@@ -460,7 +465,7 @@
     var fc = fertCost(s) || 0, oc = optiCost(g, s), rows = [];
     (levels || LEVELS).forEach(function (L) {
       [false, true].forEach(function (o) {
-        var p = recovery(A, B, L, L, o, s).p, att = 1 / p, sp = freshSplit(1, p, k || 1, A, B, s), consA = sp.A, consB = sp.B;
+        var rc = recovery(A, B, L, L, o, s), p = rc.p, att = 1 / p, sp = freshSplit(1, p, k || 1, A, B, s, rc.rA + rc.rB), consA = sp.A, consB = sp.B;
         var lev = (levelCost(startLevel(A, s), L, s) || 0) + (levelCost(startLevel(B, s), L, s) || 0);
         var kam = att * (lev + 2 * fc + (o ? (oc || 0) : 0)) + consA * va.kamas + consB * vb.kamas;
         var prepA = prepHours(startLevel(A, s), L, s), prepB = prepHours(startLevel(B, s), L, s);
@@ -484,7 +489,7 @@
     o.items.forEach(function (i) { if (!i.target && i.gen === 9) back9 += i.p; });
     var n9 = (TREE[A].gen === 9 ? 1 : 0) + (TREE[B].gen === 9 ? 1 : 0);
     // gén. 9 neuves par gén. 10 réussie, en recroisant ratés et clones jusqu'au bout (un raté garde la gén. 9 dans son arbre)
-    var sp = freshSplit(1, p, 50, A, B, s), used9 = (TREE[A].gen === 9 ? sp.A : 0) + (TREE[B].gen === 9 ? sp.B : 0);
+    var sp = freshSplit(1, p, 50, A, B, s, rec.rA + rec.rB), used9 = (TREE[A].gen === 9 ? sp.A : 0) + (TREE[B].gen === 9 ? sp.B : 0);
     var gen = GENETONS[TREE[A].gen] + GENETONS[TREE[B].gen], fs = failStats(A, B, L, opti, s);
     var other = TREE[A].gen === 9 && TREE[B].gen !== 9 ? B : A;
     return { X: X, A: A, B: B, p: p, pRe: fs.pRe, back9: fail > 0 ? back9 / fail : 0, back9abs: back9, used9: used9, genetons: gen,
@@ -765,12 +770,12 @@
     function walk(m) {   // { n : montures obtenues, t : heures avant qu'elles soient prêtes }
       if (TREE[m].gen === 1) { leaves[m] = (leaves[m] || 0) + mult; return { n: mult, t: 0 }; }
       var A = TREE[m].p[0], B = TREE[m].p[1], a = walk(A), b = walk(B), g = TREE[m].gen, pr = par(g);
-      var p = recovery(A, B, pr.L, pr.L, pr.opti, s).p, pp = poolParams(p, s), k = pp.d <= 0 ? 1 : pr.k;
+      var rc = recovery(A, B, pr.L, pr.L, pr.opti, s), p = rc.p, k = canRecycle(s) ? pr.k : 1, ps = poolSeries(p, s, rc.rA + rc.rB, k);
       var pairs = Math.min(a.n, b.n), babies, gA = TREE[A].gen, gB = TREE[B].gen;
-      if (s.reuse !== false && gA !== gB && pp.d > 0) {   // étape déséquilibrée : chaînes du côté avancé, un neuf par tentative de l'autre côté
+      if (s.reuse !== false && gA !== gB) {   // étape déséquilibrée : chaînes du côté avancé, un neuf par tentative de l'autre côté
         var nHi = gA > gB ? a.n : b.n, nLo = gA > gB ? b.n : a.n;
         babies = Math.min(nHi * (1 - Math.pow(1 - p, k)), nLo / (1 - (s.clone ? 0.5 * (k - 1) / k : 0)) * p);
-      } else babies = 2 * pairs * pp.y * (1 - Math.pow(pp.d, k));
+      } else babies = 2 * pairs * ps.Y;
       var prepA = prepHours(startLevel(A, s), pr.L, s), prepB = prepHours(startLevel(B, s), pr.L, s), prep1 = prepHours(1, pr.L, s);
       var t = Math.max(a.t + prepA, b.t + prepB) + (k - 1) * prep1;
       if (steps[m]) steps[m].groups++;
@@ -794,7 +799,7 @@
               fertHours: fertHours, fertCost: fertCost, cheapestFrom: cheapestFrom, baseDeposit: baseDeposit, depositTotal: depositTotal, prepHours: prepHours, optiCost: optiCost, optiCraft: optiCraft, plan: plan, unitCosts: unitCosts,
               optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel, bestPerSimple: bestPerSimple,
               SCROLLS: SCROLLS, SCROLL_STATS: SCROLL_STATS, scrollName: scrollName, scrollValues: scrollValues, genetonValue: genetonValue,
-              TOURS: TOURS, canon: canon, outcomesInd: outcomesInd, failStats: failStats, poolParams: poolParams, freshFor: freshFor, placesOf: placesOf,
+              TOURS: TOURS, canon: canon, outcomesInd: outcomesInd, failStats: failStats, poolSeries: poolSeries, canRecycle: canRecycle, freshFor: freshFor, placesOf: placesOf,
               cascade: cascade, freshSplit: freshSplit, carrierP: carrierP, leftoverOf: leftoverOf, multiply: multiply, bestMultiply: bestMultiply, partnerFor: partnerFor, chainP: chainP, MULT_LEVELS: MULT_LEVELS, bestBrisageTime: bestBrisageTime, saleDD: saleDD, instantBest: instantBest };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);
