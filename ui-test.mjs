@@ -90,6 +90,8 @@ try {
   // niveau d'éleveur : les enclos suivent
   await selP('eleveur', 120);
   const en = await ev(`document.querySelectorAll('main [data-k="enclos"] option').length`);
+  const en120 = await ev(`document.querySelector('main [data-k="enclos"]').value`) + '|' + ((await tblAfter('8.')).find(r => r.includes('ton plan')) || '');
+  check('niveau d’éleveur 120 : les 4 enclos sont pris d’office, le plan passe à 40 places', en120.startsWith('4|4 ton plan ¦ 40 ¦'), en120.slice(0, 80));
   await selP('eleveur', 60);
   const en2 = await ev(`document.querySelectorAll('main [data-k="enclos"] option').length + '|' + document.querySelector('main [data-k="enclos"]').value`);
   check('niveau d’éleveur 120 : 4 enclos ; retour au 60 : 2 enclos', en === 4 && en2 === '2|2', [en, en2]);
@@ -99,6 +101,10 @@ try {
   check('tableau 6 : les 20 dragodindes du plan, Rousse à briser, Prune et Rousse à extraire', br.length === 20 && sol('Rousse').startsWith('Briser au niv.') && sol('Prune et Rousse').startsWith('Extraire'), [br.length, sol('Rousse'), sol('Prune et Rousse')]);
   const fus = await ev(`/fusionn/i.test(document.querySelector('main').textContent)`);
   check('runes simples seulement : aucun conseil de fusion', fus === false, fus);
+  await ev(`(() => { const e = document.querySelector('main [data-k="sell200.Prune et Rousse"]'); e.value = '5000000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(4000);
+  const brc = await tblAfter('6.'), solc = (brc.find(r => r.split(' ¦ ')[0] === 'Prune et Rousse') || '');
+  check('vente niv. 200 : Prune et Rousse à 5 000 000 → la solution devient « Vendre au niv. 200 » ; plus de colonne caméléone', solc.endsWith('Vendre au niv. 200') && !/cam[ée]l[ée]on/i.test(await ev(`document.querySelector('main').textContent`)), solc.slice(-80));
+  await ev(`(() => { const e = document.querySelector('main [data-k="sell200.Prune et Rousse"]'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(4000);
   const mu = await tblAfter('7.');
   check('tableau 7 : Muldo et Volkorne, niveau de brisage et kamas par jour', mu.length === 2 && mu.every(r => /niv\. \d+/.test(r)), mu);
   // 9-10. après la première : en faire d'autres ; par jour selon connexions × enclos ; prix des Makinas par génération

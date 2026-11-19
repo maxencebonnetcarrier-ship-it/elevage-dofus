@@ -386,7 +386,7 @@
     var out = '<div class="box reglages"><h2>🗺️ Mon élevage : ' + (N > 1 ? '<span class="gold">' + f(N) + ' ×</span> ' : '') + dd(X) + ' <span class="mini">gén. ' + top + '</span></h2><div class="form">' +
       '<label class="field">Dragodinde visée<select data-k="planTarget">' + opts + '</select></label>' +
       field('Combien j’en veux', 'planCount', 'number', { min: 1, step: 1, note: 'ex. 100 pour un élevage de 100' }) +
-      field('Niveau d’éleveur', 'eleveur', 'number', { min: 1, max: 200, step: 1, note: emax + ' enclos débloqué' + (emax > 1 ? 's' : '') + ' (niv. 1, 40, 80, 120, 160, 200)' }) +
+      field('Niveau d’éleveur', 'eleveur', 'number', { min: 1, max: 200, step: 1, note: emax + ' enclos débloqué' + (emax > 1 ? 's' : '') + (emax < 6 ? ' ; le prochain au niveau ' + ENCLOS_LVL[emax] : '') + ' — le plan les prend tous' }) +
       field('Enclos utilisés', 'enclos', 'select', { num: 1, options: ENCLOS_LVL.slice(0, emax).map(function (l, i) { return [i + 1, (i + 1) + ' (' + (i + 1) * 10 + ' places)']; }) }) +
       field('Connexions par jour', 'connexions', 'select', { num: 1, options: [1, 2, 3, 4, 6, 8, 12, 24].map(function (x) { return [x, x + ' (toutes les ' + f(24 / x, 1) + ' h)']; }) }) +
       field('Plafond de tes barres', 'barMax', 'select', { num: 1, note: 'selon ton niveau d’éleveur (80 000 au niveau 60)', options: [[80000, '80 000 (T1)'], [140000, '140 000 (T2)'], [180000, '180 000 (T3)'], [200000, '200 000 (T4)']] }) +
@@ -484,7 +484,7 @@
     out += '<p class="note">Une Makina par accouplement (+20 % de chance). Mets ton prix pour chaque génération (une Makina basse est souvent moins chère) : la stratégie du tableau 1 se recalcule. Vide = le moins cher entre le craft (somme des ingrédients, prix moyens HDV du 19/11) et le prix HDV de la Makina. Le craft demande le niveau d’éleveur de la recette (gén. 4 : 69, gén. 5 : 89…).</p>';
 
     // ---- 6. quoi faire de chaque monture
-    out += h('h3', null, '6. Briser, vendre ou extraire : les dragodindes de ton plan');
+    out += h('h3', null, '6. Briser, vendre ou extraire : les dragodindes de ton plan (tes prix de vente niveau 200 ici)');
     var inPlan = {};
     Object.keys(pl.captures).forEach(function (c) { inPlan[c] = f(upto(pl.captures[c])) + ' capturées'; });
     pl.nodes.forEach(function (n) { inPlan[n.name] = f(cnt(n.need)) + ' à faire'; });
@@ -493,7 +493,7 @@
     out += '<details class="detail"><summary>Les ' + others.length + ' autres dragodindes</summary>' + brTable(others, s) + '</details>';
     out += '<p class="note">Runes simples seulement, au prix de « Mes prix ». Une capture (« sauvage ») n’a aucun bonus : la briser ne rapporte rien ; les lignes gén. 1 parlent des Amande, Dorée et Rousse nées en élevage. ' +
       '« Kamas en plus par place et par jour » : ce que la monture rapporte de plus que le mieux immédiat (neurones ou brisage au niveau 1), divisé par les jours où elle occupe une place. ' +
-      'Laisse vide le prix de vente d’une dragodinde qui ne se vend pas.</p>';
+      '<b>Vendre au niv. 200</b> : mets ton prix pour les dragodindes qui se vendent cher au niveau 200 ; laisse vide celles qui ne se vendent pas. La solution compare avec le temps d’XP jusqu’au 200.</p>';
 
     // ---- 7. Muldo / Volkorne
     out += h('h3', null, '7. Brisage Muldo / Volkorne');
@@ -1196,7 +1196,7 @@
     if (k === 'xpFam') S.xpFill = null;
     if (k === 'fertFam') S.fertFill = null;
     setPath(k, v);
-    if (k === 'eleveur') S.enclos = Math.min(+S.enclos || 1, enclosMax());
+    if (k === 'eleveur') S.enclos = enclosMax();   // chaque palier (40, 80, 120, 160, 200) débloque un enclos : le plan les prend tous
     if (k === 'brisage.weight') S.brisage.rune = v === 100 ? 'PA' : 'PM';
     save(); render();
   }
