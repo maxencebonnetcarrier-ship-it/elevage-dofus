@@ -2,7 +2,7 @@
    Ombre sinon Kourial, novembre 2026) — coût en kamas pour 1 000 points de jauge, recette la moins chère de chaque famille.
    null = aucun prix connu (un ingrédient sans relevé). Tout se modifie dans l'onglet « Prix et réglages ». */
 var DD_DEFAULTS = {
-  version: 6,
+  version: 7,
   target: 'Prune et Rousse',
   objective: 'jours',
   enclos: 2,
@@ -42,7 +42,8 @@ var DD_DEFAULTS = {
   // ressource propre de la Makina gén. 10 du Muldo et du Volkorne (prix de l'utilisateur, 12/11/2026) ; le reste : 10 Pépites + drops
   makina10: { 'Muldo': 74000, 'Volkorne': 18000 },
   ingPrices: {
-    'Pépite': 5000, 'Sueur de dragodinde': 0, 'Pic de dragodinde dorée': 0, 'Pic de dragodinde': 0,
+    // Pic de dragodinde : 645, lu dans « prix makina.mp4 » le 19/11/2026 (les autres prix y sont hors du cadre)
+    'Pépite': 5000, 'Sueur de dragodinde': 0, 'Pic de dragodinde dorée': 0, 'Pic de dragodinde': 645,
     'Fémur du Chafer Rōnin': 0, 'La cambriole pour les Nuls': 0, 'Pierre du Craqueleur Légendaire': 0, 'Groin de Dragon Cochon': 0,
     'Bourgeon explosif de Damadrya': 0, 'Laine du Royalmouth': 0, 'Pistil du Tynril': 0, "Mèche Rebelle d'Hell Mina": 0
   },

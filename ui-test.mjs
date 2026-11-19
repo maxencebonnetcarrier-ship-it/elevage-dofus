@@ -159,7 +159,7 @@ try {
   await ev(`(() => { const e = document.querySelector('[data-k="glourPrice"]'); e.value = '20000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1500);
   const opt10 = await ev(`[...document.querySelectorAll('tr')].map(t => t.textContent).find(t => t.startsWith('gén. 10'))`);
   const nsp = t => t.replace(/[\s\u00a0\u202f]/g, '');
-  check('Queue de Glourséleste à 20 000 : Optimakina gén. 10 = 50 000 + 20 000', nsp(opt10).includes('70000'), opt10);
+  check('Queue de Glourséleste à 20 000 : Optimakina gén. 10 = 50 000 + 3 Pic à 645 + 20 000', nsp(opt10).includes('71935'), opt10);
   const mk = await ev(`[...document.querySelectorAll('main tr')].map(t => t.textContent).filter(t => t.startsWith('Muldoressource') || t.startsWith('Volkorneressource')).join(' | ')`);
   check('Makina gén. 10 : Muldo 74 000 + 50 000, Volkorne 18 000 + 50 000', nsp(mk).includes('124000') && nsp(mk).includes('68000'), mk);
   check('extraction : Ambre 153 000 (Muldo), Corne 57 000 (Volkorne)', nsp(mk).includes('Ambre153000') && nsp(mk).includes('Corne57000'), mk);

@@ -60,6 +60,11 @@
         if (saved.enclos > 6) saved.enclos = 6;
         saved.version = 6;
       }
+      // version 6 → 7 : Pic de dragodinde à 645 (vidéo du 19/11) ; l'ancien 0 par défaut est remplacé, un prix saisi reste
+      if (saved && saved.version === 6) {
+        if (saved.ingPrices && saved.ingPrices['Pic de dragodinde'] === 0) delete saved.ingPrices['Pic de dragodinde'];
+        saved.version = 7;
+      }
       if (saved && saved.version === d.version) {
         Object.keys(saved).forEach(function (k) {
           if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'scrollPrices' || k === 'ingPrices' || k === 'makina10' || k === 'extract' || k === 'ddBrise' || k === 'sell200' || k === 'calc') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
@@ -1213,6 +1218,6 @@
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'plan'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (clonage : 2 stériles de la même couleur → cette couleur, sans parents)';
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (Pic de dragodinde à 645, lu dans ta vidéo des Makinas)';
   render();
 })();

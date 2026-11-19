@@ -199,12 +199,14 @@ t('parchemins : un généton vaut le parchemin le plus rentable (prix × (1 − 
   const pl = { target: 'Prune et Rousse', genetons: 1000 };
   near(E.resultValue(pl, S).genetons, 1000 * 10009 * 0.99 / 10, 1e-6);
 });
-t('Optimakinas : craft à tes prix (10 Pépites à 5 000, drops à 0, Queue de Glourséleste 30 000 pour la gén. 10)', () => {
-  for (let g = 2; g <= 9; g++) near(E.optiCraft(g, S), 10 * 5000 + E.OPTI[g].queues * S.queuePrice, 1e-9);
-  near(E.optiCraft(10, S), 10 * 5000 + 30000, 1e-9);
+t('Optimakinas : craft à tes prix = somme des ingrédients (10 Pépites à 5 000, Pic de dragodinde 645, autres drops à 0, Queue de Glourséleste 30 000 pour la gén. 10)', () => {
+  const pic = g => (E.OPTI[g].ing['Pic de dragodinde'] || 0) * 645;
+  for (let g = 2; g <= 9; g++) near(E.optiCraft(g, S), 10 * 5000 + pic(g) + E.OPTI[g].queues * S.queuePrice, 1e-9);
+  near(E.optiCraft(4, S), 50645, 1e-9); near(E.optiCraft(9, S), 51290, 1e-9);
+  near(E.optiCraft(10, S), 10 * 5000 + 3 * 645 + 30000, 1e-9);
   near(E.optiCost(10, Object.assign({}, S, { optiBuy: { 10: 90000 } })), 90000, 1e-12);   // un prix d'achat saisi l'emporte
   const s = Object.assign({}, S, { ingPrices: Object.assign({}, S.ingPrices, { 'Pistil du Tynril': 12000 }), queuePrice: 1000 });
-  near(E.optiCraft(8, s), 10 * 5000 + 12000 + 2 * 1000, 1e-9);
+  near(E.optiCraft(8, s), 10 * 5000 + 12000 + 2 * 645 + 2 * 1000, 1e-9);
   assert.strictEqual(E.optiCraft(9, Object.assign({}, S, { ingPrices: Object.assign({}, S.ingPrices, { 'Pépite': null }) })), null);
 });
 t('seuils : la fécondité prend le carburant le moins cher capable d’atteindre la tranche', () => {
