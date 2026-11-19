@@ -113,7 +113,7 @@
      les deux parents deviennent stériles ; une réussite sort de la réserve.
      Ratés recroisés : chaque bébé raté revient (il garde A et B dans son arbre, il vise encore la cible).
      Clonage (constaté en jeu) : deux stériles de la MÊME couleur donnent une monture de cette couleur, SANS PARENTS
-     (2 Amande → 1 Amande), au niveau 1. Un clone n'est donc utile que s'il est de la couleur A ou B : deux ratés stériles
+     (2 Amande → 1 Amande, même si leur père était une Orchidée : seule compte la couleur des stériles), au niveau 1. Un clone n'est donc utile que s'il est de la couleur A ou B : deux ratés stériles
      d'une autre couleur donnent une monture qui a perdu la recette.
      c = part de la réserve de couleur A ou B (neufs, clones, ratés nés A ou B) ; r = part des ratés nés de couleur A ou B.
      Y = réussites par parent neuf après k tours ; left = ce qui reste de la réserve (par parent neuf). */
@@ -284,7 +284,7 @@
     });
     return (CARRY_CACHE[ck] = w ? acc / w : 0);
   }
-  // montures qui restent à la fin d'une étape : ratés (ils portent ses deux parents) et clones de la couleur d'un parent
+  // montures qui restent à la fin d'une étape : ratés (ils portent ses deux parents) et clones de couleur A ou B (sans parents)
   function leftoverOf(fA, fB, att, p, k, A, B, s, r) {
     var lo = 0;
     if (s.reuse === false) lo += att * (1 - p);                                   // ratés jamais recroisés

@@ -416,7 +416,8 @@
     out += '<div class="prog"><div class="pbar"><i style="width:' + Math.round(nDone / Math.max(1, nAll) * 100) + '%"></i></div><span><b>' + nDone + ' / ' + nAll + '</b> lignes faites</span></div>';
     out += table(['✓', 'Étape', 'À faire', 'Combien', 'Couple', 'Parents', 'Niveau des parents', 'Chance', 'Accou&shy;plements', 'Jours', 'Stériles et ratés en trop'], rowsA, ['', '', 'l', '', 'l', 'l', '', '', '', '', 'l']);
     out += '<p class="note">Nombres moyens. « Parents » : ceux de l’étape d’avant ; les bébés ratés et les clones (qui repartent au niveau 1) font le reste des accouplements. ' +
-      '<b>Clone</b> : deux stériles de la même couleur donnent cette couleur, <b>sans parents</b> (2 Amande → 1 Amande) ; clone les stériles de la couleur d’un parent de l’étape, pas deux ratés : ils perdraient la recette. ' +
+      '<b>Clone</b> : sa couleur est celle des deux stériles, <b>jamais celle de leurs parents</b>, et il n’a pas de parents (2 Amande → 1 Amande, même si leur père était une Orchidée). ' +
+      'À une étape A × B, il ne sert que si les deux stériles sont des A ou des B ; deux ratés d’une autre couleur clonés donnent cette autre couleur. ' +
       '« Stériles et ratés en trop » : la solution du tableau 6 pour cette couleur. « Porteurs » : un raté garde ses deux parents dans son arbre ; croisé avec le bon partenaire, il vise la même génération, à la même chance, que la couleur qu’il remplace. ' +
       'Seuls les cas où la chance reste la même sont pris (sinon la cible se partage avec une autre couleur). Coche une ligne finie : c’est gardé sur cet appareil.</p>';
 
@@ -1129,7 +1130,8 @@
       'Chance de la génération cible = 30 % + 0,15 % × (niveau du parent A + niveau du parent B) ; Optimakina +20 % depuis la 3.7 (+10 % avant) ; Takeza +20 %. Deux parents niveau 167 + Optimakina = 100 % ; deux niveau 200 sans Optimakina = 90 %.',
       'Naissance immédiate, bébé niveau 1 jauges à 0 ; les deux parents deviennent stériles.',
       'Clonage : deux stériles de la <b>même couleur</b> donnent une monture de cette couleur, <b>sans parents</b> (constaté en jeu : 2 Amande → 1 Amande) ; elle repart au <b>niveau 1</b>, jauges à 0 ; la capacité est perdue. ' +
-        'Deux ratés clonés perdent donc la recette : seul le clone de deux stériles de la couleur d’un parent de l’étape sert à la recroiser.',
+        'Sa couleur ne dépend que des deux stériles, jamais de leurs parents : 2 Amande donnent une Amande, même si leur père était une Orchidée. ' +
+        'À l’étape Ébène (Amande et Dorée × Dorée et Rousse), le clone de deux Amande et Dorée sert ; celui de deux ratés Amande donne une Amande, qui ne sert plus à cette étape.',
       'Une monture est féconde quand l’Amour, l’Endurance et la Maturité atteignent 20 000. Il n’y a pas de carburant « fécondité » : Dragofesse (Amour), Foudroyeur (Endurance), Abreuvoir (Maturité), Caresseur et Baffeur (Sérénité + et −), Mangeoire (XP). Deux jauges actives à la fois par enclos ; une jauge nourrit toutes les montures de l’enclos.',
       'Jauges 3.7 : 200 000 points au maximum ; Extrait jusqu’à 80 000, Philtre 140 000, Potion 180 000, Élixir 200 000 ; 10 / 20 / 30 / 40 points toutes les 10 s selon le palier.',
       'Génétons : seulement si le bébé dépasse toutes les générations des deux arbres ; par parent 2, 4, 8, 16, 30, 60, 120, 240, 500 (gén. 1 à 9).',
