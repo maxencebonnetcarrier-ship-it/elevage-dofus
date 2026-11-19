@@ -47,7 +47,7 @@ try {
   check('porteurs : l’Orchidée prend des ratés d’Ébène à la place de Dorée et Rousse', /dont \d+ ratés d’Ébène/.test(orc), orc);
   await ev(`document.querySelector('main [data-k="porteurs"]').click()`); await sleep(3500);
   const ord0 = await tblAfter('2.'), sols1 = await tblAfter('1.');
-  check('porteurs décochés : plus aucun raté réutilisé, plus de captures', !ord0.some(r => r.includes('ratés d’')) && sols1.length === 7 && numP(sols1[0].split(' ¦ ')[3]) > numP(sols[0].split(' ¦ ')[3]), [sols[0].split(' ¦ ')[3], sols1[0].split(' ¦ ')[3]]);
+  check('porteurs : à stratégie égale, la ligne « sans les porteurs » demande plus de captures ; décochés, plus aucun raté réutilisé', numP(sols[3].split(' ¦ ')[3]) > numP(sols[0].split(' ¦ ')[3]) && !ord0.some(r => r.includes('ratés d’')) && sols1.length === 7, [sols[0].split(' ¦ ')[3], sols[3].split(' ¦ ')[3]]);
   await ev(`document.querySelector('main [data-k="porteurs"]').click()`); await sleep(3500);
   // un élevage de 100
   await selP('planCount', 100);
@@ -159,9 +159,9 @@ try {
   await ev(`(() => { const e = document.querySelector('[data-k="glourPrice"]'); e.value = '20000'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1500);
   const opt10 = await ev(`[...document.querySelectorAll('tr')].map(t => t.textContent).find(t => t.startsWith('gén. 10'))`);
   const nsp = t => t.replace(/[\s\u00a0\u202f]/g, '');
-  check('Queue de Glourséleste à 20 000 : Optimakina gén. 10 = 50 000 + 3 Pic à 645 + 20 000', nsp(opt10).includes('71935'), opt10);
+  check('Queue de Glourséleste à 20 000 : Optimakina gén. 10 = 54 593 − 35 535 + 20 000 = 39 058', nsp(opt10).includes('39058'), opt10);
   const mk = await ev(`[...document.querySelectorAll('main tr')].map(t => t.textContent).filter(t => t.startsWith('Muldoressource') || t.startsWith('Volkorneressource')).join(' | ')`);
-  check('Makina gén. 10 : Muldo 74 000 + 50 000, Volkorne 18 000 + 50 000', nsp(mk).includes('124000') && nsp(mk).includes('68000'), mk);
+  check('Makina gén. 10 : Muldo 74 000 + 10 Pépites (5 180), Volkorne 18 000 + 5 180', nsp(mk).includes('79180') && nsp(mk).includes('23180'), mk);
   check('extraction : Ambre 153 000 (Muldo), Corne 57 000 (Volkorne)', nsp(mk).includes('Ambre153000') && nsp(mk).includes('Corne57000'), mk);
   // 4. les réglages survivent à un rechargement (stockage local)
   await send('Page.reload'); await sleep(2500);

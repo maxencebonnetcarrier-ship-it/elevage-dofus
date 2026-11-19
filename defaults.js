@@ -2,7 +2,7 @@
    Ombre sinon Kourial, novembre 2026) — coût en kamas pour 1 000 points de jauge, recette la moins chère de chaque famille.
    null = aucun prix connu (un ingrédient sans relevé). Tout se modifie dans l'onglet « Prix et réglages ». */
 var DD_DEFAULTS = {
-  version: 7,
+  version: 8,
   target: 'Prune et Rousse',
   objective: 'jours',
   enclos: 2,
@@ -36,18 +36,20 @@ var DD_DEFAULTS = {
     'Agilité': [9306, 25258, 62291, 144736]
   },
   tax: 0.01,   // taxe de l’hôtel des ventes : 1 % (constaté en jeu)
-  queuePrice: 0,
-  glourPrice: 30000,   // Queue de Glourséleste (Optimakina gén. 10), prix de l'utilisateur le 12/11/2026
-  // ingrédients des Optimakinas : Pépite 5 000 (prix de l'utilisateur, 12/11/2026) ; le reste, il le droppe → 0
+  // prix moyens HDV Ombre lus dans « prix makina.mp4 » (infobulles « PRIX MOYEN », 19/11/2026)
+  queuePrice: 649,     // Queue de dragodinde sauvage
+  glourPrice: 35535,   // Queue de Glourséleste (Optimakina gén. 10)
   // ressource propre de la Makina gén. 10 du Muldo et du Volkorne (prix de l'utilisateur, 12/11/2026) ; le reste : 10 Pépites + drops
   makina10: { 'Muldo': 74000, 'Volkorne': 18000 },
   ingPrices: {
-    // Pic de dragodinde : 645, lu dans « prix makina.mp4 » le 19/11/2026 (les autres prix y sont hors du cadre)
-    'Pépite': 5000, 'Sueur de dragodinde': 0, 'Pic de dragodinde dorée': 0, 'Pic de dragodinde': 645,
-    'Fémur du Chafer Rōnin': 0, 'La cambriole pour les Nuls': 0, 'Pierre du Craqueleur Légendaire': 0, 'Groin de Dragon Cochon': 0,
-    'Bourgeon explosif de Damadrya': 0, 'Laine du Royalmouth': 0, 'Pistil du Tynril': 0, "Mèche Rebelle d'Hell Mina": 0
+    // prix moyens HDV Ombre, à l'unité, lus dans « prix makina.mp4 » le 19/11/2026 (la Pépite se vend aussi en lot de 10 : 5 180)
+    'Pépite': 518, 'Sueur de dragodinde': 1773, 'Pic de dragodinde dorée': 1559, 'Pic de dragodinde': 645,
+    'Fémur du Chafer Rōnin': 338, 'La cambriole pour les Nuls': 690, 'Pierre du Craqueleur Légendaire': 393, 'Groin de Dragon Cochon': 792,
+    'Bourgeon explosif de Damadrya': 9561, 'Laine du Royalmouth': 2000, 'Pistil du Tynril': 2779, "Mèche Rebelle d'Hell Mina": 40606
   },
   optiBuy: {},
+  // prix moyen HDV des Optimakinas elles-mêmes (même vidéo) ; gén. 8 à 10 non survolées. La page prend le moins cher : craft ou HDV.
+  optiHdv: { 2: 8155, 3: 9583, 4: 23598, 5: 16846, 6: 10049, 7: 39999 },
   // prix de vente d'une dragodinde au niveau 200, à TON prix (vide = elle ne se vend pas) : { 'Prune': 500000, ... }
   sell200: {},
   // calculateur par dragodinde (comme muldo-calculator) : lots de captures, niveau, Optimakina, tours de recroisement

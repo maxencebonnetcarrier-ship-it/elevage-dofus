@@ -229,9 +229,11 @@
     if (o.glour && gl === null) return null;
     return t + o.queues * (q || 0) + (o.glour ? gl : 0);
   }
-  function optiCost(gen, s) {   // ton prix d'achat s'il est saisi, sinon le craft
+  function optiCost(gen, s) {   // ton prix saisi s'il y en a un ; sinon le moins cher entre le craft (somme des ingrédients) et l'HDV
     var buy = num(s.optiBuy && s.optiBuy[gen]);
-    return buy !== null ? buy : optiCraft(gen, s);
+    if (buy !== null) return buy;
+    var cr = optiCraft(gen, s), hdv = num(s.optiHdv && s.optiHdv[gen]);
+    return cr === null ? hdv : (hdv === null ? cr : Math.min(cr, hdv));
   }
 
   /* Parents neufs par côté pour `need` réussites en k tours.

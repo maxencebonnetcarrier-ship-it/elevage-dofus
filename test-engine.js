@@ -199,14 +199,23 @@ t('parchemins : un généton vaut le parchemin le plus rentable (prix × (1 − 
   const pl = { target: 'Prune et Rousse', genetons: 1000 };
   near(E.resultValue(pl, S).genetons, 1000 * 10009 * 0.99 / 10, 1e-6);
 });
-t('Optimakinas : craft à tes prix = somme des ingrédients (10 Pépites à 5 000, Pic de dragodinde 645, autres drops à 0, Queue de Glourséleste 30 000 pour la gén. 10)', () => {
-  const pic = g => (E.OPTI[g].ing['Pic de dragodinde'] || 0) * 645;
-  for (let g = 2; g <= 9; g++) near(E.optiCraft(g, S), 10 * 5000 + pic(g) + E.OPTI[g].queues * S.queuePrice, 1e-9);
-  near(E.optiCraft(4, S), 50645, 1e-9); near(E.optiCraft(9, S), 51290, 1e-9);
-  near(E.optiCraft(10, S), 10 * 5000 + 3 * 645 + 30000, 1e-9);
-  near(E.optiCost(10, Object.assign({}, S, { optiBuy: { 10: 90000 } })), 90000, 1e-12);   // un prix d'achat saisi l'emporte
+t('Optimakinas : craft = somme des ingrédients aux prix moyens HDV de la vidéo (19/11) ; coût = ton prix, sinon le moins cher craft / HDV', () => {
+  // recalcul à la main : Pépite 518, Sueur 1 773, Pic doré 1 559, Pic 645, Queue sauvage 649, Queue de Glourséleste 35 535
+  const base = 10 * 518;
+  near(E.optiCraft(2, S), 338 + base + 1773 + 1559, 1e-9);                                   // 8 850
+  near(E.optiCraft(3, S), 690 + base + 1773 + 1559 + 649, 1e-9);                             // 9 851
+  near(E.optiCraft(4, S), 393 + base + 1773 + 1559 + 645 + 649, 1e-9);                       // 10 199
+  near(E.optiCraft(5, S), 792 + base + 1773 + 2 * 1559 + 645 + 649, 1e-9);                   // 12 157
+  near(E.optiCraft(6, S), 9561 + base + 1773 + 2 * 1559 + 645 + 2 * 649, 1e-9);              // 21 575
+  near(E.optiCraft(7, S), 2000 + base + 1773 + 2 * 1559 + 2 * 645 + 2 * 649, 1e-9);          // 14 659
+  near(E.optiCraft(8, S), 2779 + base + 1773 + 3 * 1559 + 2 * 645 + 2 * 649, 1e-9);          // 16 997
+  near(E.optiCraft(9, S), 40606 + base + 2 * 1773 + 3 * 1559 + 2 * 645 + 3 * 649, 1e-9);     // 57 246
+  near(E.optiCraft(10, S), base + 3 * 1773 + 3 * 1559 + 3 * 645 + 3 * 649 + 35535, 1e-9);    // 54 593
+  // le moins cher : HDV pour les gén. 2, 3 et 6 ; craft pour les autres
+  near(E.optiCost(2, S), 8155, 1e-9); near(E.optiCost(6, S), 10049, 1e-9); near(E.optiCost(4, S), 10199, 1e-9); near(E.optiCost(9, S), 57246, 1e-9);
+  near(E.optiCost(10, Object.assign({}, S, { optiBuy: { 10: 90000 } })), 90000, 1e-12);   // un prix saisi l'emporte
   const s = Object.assign({}, S, { ingPrices: Object.assign({}, S.ingPrices, { 'Pistil du Tynril': 12000 }), queuePrice: 1000 });
-  near(E.optiCraft(8, s), 10 * 5000 + 12000 + 2 * 645 + 2 * 1000, 1e-9);
+  near(E.optiCraft(8, s), 12000 + base + 1773 + 3 * 1559 + 2 * 645 + 2 * 1000, 1e-9);
   assert.strictEqual(E.optiCraft(9, Object.assign({}, S, { ingPrices: Object.assign({}, S.ingPrices, { 'Pépite': null }) })), null);
 });
 t('seuils : la fécondité prend le carburant le moins cher capable d’atteindre la tranche', () => {

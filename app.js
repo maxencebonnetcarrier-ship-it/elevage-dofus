@@ -65,6 +65,15 @@
         if (saved.ingPrices && saved.ingPrices['Pic de dragodinde'] === 0) delete saved.ingPrices['Pic de dragodinde'];
         saved.version = 7;
       }
+      // version 7 → 8 : prix moyens HDV de la vidéo pleine fenêtre (19/11) ; les anciens défauts (Pépite 5 000, drops à 0, Queue de Glourséleste 30 000)
+      // sont remplacés, un prix saisi reste
+      if (saved && saved.version === 7) {
+        var OLD7 = { 'Pépite': 5000, 'Pic de dragodinde': 645 };
+        if (saved.ingPrices) Object.keys(saved.ingPrices).forEach(function (k) { var v = saved.ingPrices[k]; if (v === 0 || v === null || v === OLD7[k]) delete saved.ingPrices[k]; });
+        if (saved.queuePrice === 0 || saved.queuePrice === null) delete saved.queuePrice;
+        if (saved.glourPrice === 30000) delete saved.glourPrice;
+        saved.version = 8;
+      }
       if (saved && saved.version === d.version) {
         Object.keys(saved).forEach(function (k) {
           if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'scrollPrices' || k === 'ingPrices' || k === 'makina10' || k === 'extract' || k === 'ddBrise' || k === 'sell200' || k === 'calc') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
@@ -203,9 +212,10 @@
     out += '<h4>Parchemins (prix HDV ; coût chez Eugène Éton : 10, 30, 70, 170 génétons)</h4>' + table(['Caractéristique'].concat(E.SCROLLS.map(function (x) { return x[0] + ' (' + x[1] + ')'; })), E.SCROLL_STATS.map(function (st) {
       return [esc(st)].concat(E.SCROLLS.map(function (x, i) { return numInput('scrollPrices.' + st + '.' + i, (S.scrollPrices[st] || [])[i]); }));
     }));
-    out += '<h4>Optimakinas (prix d’achat ; vide = coût du craft)</h4><div class="pgrid">' + Object.keys(E.OPTI).map(function (g) {
+    out += '<h4>Optimakinas (ton prix ; vide = le moins cher : craft ou HDV)</h4><div class="pgrid">' + Object.keys(E.OPTI).map(function (g) {
       var craft = E.optiCraft(+g, S);
-      return '<label class="field">Gén. ' + g + numInput('optiBuy.' + g, S.optiBuy[g], craft == null ? 'prix ?' : 'craft ' + f(craft)) + '</label>';
+      var hv = (S.optiHdv || {})[g];
+      return '<label class="field">Gén. ' + g + numInput('optiBuy.' + g, S.optiBuy[g], (craft == null ? 'prix ?' : 'craft ' + f(craft)) + (hv ? ' · HDV ' + f(hv) : '')) + '</label>';
     }).join('') + '</div>';
     out += '<h4>Ingrédients des Makinas (0 = tu le droppes)</h4><div class="pgrid">' + Object.keys(S.ingPrices || {}).map(function (k) {
       return '<label class="field">' + esc(k) + numInput('ingPrices.' + k, S.ingPrices[k]) + '</label>';
@@ -467,11 +477,11 @@
       var ns = pl.nodes.filter(function (n) { return n.gen === gg; }), n0 = ns[0], L = n0.L, oc = E.optiCost(gg, s);
       var p0 = E.recovery(n0.A, n0.B, L, L, false, s).p, p1 = E.recovery(n0.A, n0.B, L, L, true, s).p;
       var cr = E.optiCraft(gg, s);
-      return [String(gg), ns.map(function (n) { return dd(n.name); }).join('<br>'), numInput('optiBuy.' + gg, S.optiBuy[gg], cr == null ? 'prix ?' : 'craft ' + f(cr)) + (oc == null ? '' : '<br><span class="mini">compté ' + f(oc) + '</span>'), 'niv. ' + L, pct(p0), '<b>' + pct(p1) + '</b>',
+      return [String(gg), ns.map(function (n) { return dd(n.name); }).join('<br>'), numInput('optiBuy.' + gg, S.optiBuy[gg], cr == null ? 'prix ?' : 'craft ' + f(cr)) + ((S.optiHdv || {})[gg] ? '<br><span class="mini">craft ' + f(cr) + ' · HDV ' + f(S.optiHdv[gg]) + '</span>' : '') + (oc == null ? '' : '<br><span class="mini">compté ' + f(oc) + '</span>'), 'niv. ' + L, pct(p0), '<b>' + pct(p1) + '</b>',
         f(1 / p1, 2), oc == null ? '—' : '<b>' + f(oc / p1) + '</b>', f(1 / p0 - 1 / p1, 2), n0.opti ? '<span class="pill g">oui</span>' : 'non'];
     });
-    out += table(['Gén.', 'Dragodinde', 'Ton prix d’une Makina<br><span class="mini">vide = craft</span>', 'Niveau', 'Chance sans', 'Chance avec', 'Makinas par réussite', 'Coût Makina par réussite', 'Accouplements évités par réussite', 'Dans ton plan'], rowsD, ['', 'l']);
-    out += '<p class="note">Une Makina par accouplement (+20 % de chance). Mets ton prix pour chaque génération (une Makina basse est souvent moins chère) : la stratégie du tableau 1 se recalcule. Vide = coût du craft (10 Pépites à ' + f((S.ingPrices || {})['Pépite']) + ').</p>';
+    out += table(['Gén.', 'Dragodinde', 'Ton prix d’une Makina<br><span class="mini">vide = le moins cher : craft ou HDV</span>', 'Niveau', 'Chance sans', 'Chance avec', 'Makinas par réussite', 'Coût Makina par réussite', 'Accouplements évités par réussite', 'Dans ton plan'], rowsD, ['', 'l']);
+    out += '<p class="note">Une Makina par accouplement (+20 % de chance). Mets ton prix pour chaque génération (une Makina basse est souvent moins chère) : la stratégie du tableau 1 se recalcule. Vide = le moins cher entre le craft (somme des ingrédients, prix moyens HDV du 19/11) et le prix HDV de la Makina. Le craft demande le niveau d’éleveur de la recette (gén. 4 : 69, gén. 5 : 89…).</p>';
 
     // ---- 6. quoi faire de chaque monture
     out += h('h3', null, '6. Briser, vendre ou extraire : les dragodindes de ton plan');
@@ -1218,6 +1228,6 @@
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'plan'; render(); });
-  document.getElementById('ver').textContent = ' · version du 12/11/2026 (Pic de dragodinde à 645, lu dans ta vidéo des Makinas)';
+  document.getElementById('ver').textContent = ' · version du 12/11/2026 (prix des Makinas : ingrédients et HDV lus dans ta vidéo du 19/11)';
   render();
 })();
