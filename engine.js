@@ -216,10 +216,22 @@
     var x = baseDeposit(s.xpFam, s.fuel['Expérience']); if (x === null) ok = false; else t += x;
     return ok ? t * s.enclos : null;
   }
-  // préparation d'un parent : fécondité + XP ; la Mangeoire tourne aussi pendant la 2e phase (Amour), d'où le chevauchement
+  /* Sérénité (indication de l'utilisateur, 19/11/2026) : à chaque fournée, la sérénité des montures se ramène de s.seren points (2 500)
+     à 0 AVANT Endurance, Maturité et Amour. Sa jauge va plus vite que les autres : × s.serenSpeed (2 par défaut, hypothèse : vitesse non
+     documentée en 3.7), depuis le remplissage de tes barres de fécondité. Faite pendant ta connexion (s.serenOnline, par défaut) : quelques
+     minutes ; sinon (serenOnline false) la fournée attend ta connexion suivante. s.serenTime === false : pas de temps de sérénité. */
+  function serenHours(s) {
+    var pts = num(s.seren); if (!(pts > 0) || s.serenTime === false) return 0;
+    var sp = num(s.serenSpeed); if (!(sp > 0)) sp = 1;
+    var m = minutesToDrain(fillOf(s.fertFam, s.fertFill), pts);
+    if (!isFinite(m)) m = pts / RATE[0];
+    var h = m / sp / 60;
+    return s.serenOnline === false ? Math.max(h, s.refillH || 12) : h;
+  }
+  // préparation d'un parent : sérénité, puis fécondité, + XP ; la Mangeoire tourne aussi pendant la sérénité et la 2e phase (Amour)
   function prepHours(startLvl, L, s) {
-    var f = fertHours(s), lv = levelHours(startLvl, L, s);
-    return f + Math.max(0, lv - f / 2);
+    var f = fertHours(s), z = serenHours(s), lv = levelHours(startLvl, L, s);
+    return z + f + Math.max(0, lv - f / 2 - z);
   }
   // coût du craft avec tes prix : ingrédients (0 = droppé par toi) + Queues + Queue de Glourséleste ; null si un prix utile manque
   function optiCraft(gen, s) {
@@ -692,10 +704,11 @@
     // ce que coûte une tentative : Makina, filet, XP et fécondité des deux parents (à tes prix de carburant)
     var fc = fertCost(s) || 0, perAtt = (opti ? unit : 0) + (method === 'cap' ? (num(s.filet) || 0) : 0) +
       (levelCost(1, L, s) || 0) + (levelCost(method === 'cap' ? (s.capLevel || 1) : 1, L, s) || 0) + 2 * fc;
+    var horizon = Math.max(0, num(o.horizonDays) || 0);   // o.horizonDays : continuer jusque-là et garder la courbe (tableau semaine par semaine)
     function run(grow) {   // en moyenne, tentative par tentative ; grow = cloner les X stériles pour lancer d'autres chaînes
       var h = method === 'cap' ? Math.min(start, hmax) : Math.min(start, places), Sx = 0, count = start, t = 0, att = 0, clones = 0;
-      var hit = {}, k = 0;
-      for (var cyc = 0; cyc < 4000 && k < targets.length; cyc++) {
+      var hit = {}, k = 0, curve = horizon ? [{ d: 0, count: count, att: 0 }] : null;
+      for (var cyc = 0; cyc < 4000 && (k < targets.length || t / 24 < horizon); cyc++) {
         var a = method === 'cap' ? Math.min(h, hmax) : Math.min(h / 2, hmax);
         if (a < 0.02) break;
         att += a; t += T;
@@ -706,8 +719,9 @@
           var room = method === 'cap' ? hmax - h : places - h, c2 = Math.max(0, Math.min(Sx / 2, room));
           if (c2 > 1e-9) { h += c2; Sx -= 2 * c2; count -= c2; clones += c2; }
         }
+        if (curve) curve.push({ d: t / 24, count: count, att: att });
       }
-      return { hit: hit, max: count };
+      return { hit: hit, max: count, curve: curve };
     }
     var runs = [run(true), run(false)], res = {};
     targets.forEach(function (n) {
@@ -720,7 +734,8 @@
     return { X: X, method: method, L: L, opti: opti, partner: partner && partner.c, p: st.p, pRe: st.pRe, pEff: st.pEff, T: T, unit: unit,
              perDay: perDay, attPerDay: method === 'cap' ? perDayAtt : 0, costPerAtt: perAtt, valueX: valueX,
              gainPerDay: method === 'cap' ? perDay * valueX - perDayAtt * perAtt : null,
-             reach: res, maxReach: Math.max(runs[0].max, runs[1].max), start: start };
+             reach: res, maxReach: Math.max(runs[0].max, runs[1].max), start: start,
+             curveClones: runs[0].curve, curveNoClones: runs[1].curve };
   }
   var MULT_LEVELS = [1, 20, 40, 60, 80, 100, 120, 150, 167, 200];
   // meilleur niveau pour multiplier X à la chaîne : 'jours' = le plus de X par jour ; 'renta' = le plus de kamas par jour ; 'sans' = sans Makina
@@ -736,6 +751,62 @@
       });
     });
     return best && best.r;
+  }
+
+  /* SEMAINE PAR SEMAINE (demande de l'utilisateur, 19/11/2026) : kamas en poche à la fin de chaque semaine si tu extrais à cette date
+     ce que la stratégie a produit (neurones × (1 − taxe), génétons au prix des parchemins), moins ce qu'elle a dépensé (Makinas, filets,
+     carburants à tes prix).
+     A. Gén. 2 en boucle : la gén. 2 la plus rentable (deux captures), au meilleur niveau, Makina et nombre de tours ; chaque bébé extrait
+        (2 neurones). Débit en continu d'un grand élevage (toutes tes places), après le délai de la première fournée.
+     B. Ton plan jusqu'à la 1re gén. 10 (dépenses et génétons étalés sur sa durée ; les montures du chemin ne sont comptées qu'à la fin :
+        estimation basse), puis gén. 10 × capture en chaîne, en clonant les gén. 10 stériles : chaque gén. 10 vaut ses neurones.
+     C. Pareil, sans cloner. */
+  function weekly(target, s, o) {
+    o = o || {};
+    var weeks = o.weeks || [1, 2, 3, 4, 6, 8, 12, 16], H = weeks[weeks.length - 1] * 7, BIG = 300;
+    var tax = num(s.tax) || 0, valueX = TREE[target].gen * (num(s.neurone) || 0) * (1 - tax);
+    // A : la meilleure gén. 2 en continu
+    var A = null;
+    NAMES.forEach(function (g2) {
+      if (TREE[g2].gen !== 2) return;
+      [1, 20, 40, 60, 80, 100].forEach(function (L) {
+        [false, true].forEach(function (op) {
+          if (op && (o.allowOpti === false || optiCost(2, s) === null)) return;
+          [1, 2, 3].forEach(function (k) {
+            var pol = { 2: { L: L, opti: op, k: k } }, pb = plan(g2, pol, Object.assign({}, s, { topNeed: BIG }));
+            var cap = pb.capDays > 0 ? pb.capDays : pb.days, rate = (pb.value - pb.kamas) / Math.max(cap, 1e-9);
+            if (!A || rate > A.rate) A = { target: g2, L: L, opti: op, k: k, rate: rate, perDayN: BIG / cap, perUnit: (pb.value - pb.kamas) / BIG,
+                                           capPerUnit: pb.capTot / BIG, lag: plan(g2, pol, Object.assign({}, s, { topNeed: 1 })).bestDays };
+          });
+        });
+      });
+    });
+    function cumA(d) { return A ? A.rate * Math.max(0, d - A.lag) : 0; }
+    // B et C : la 1re gén. 10 par ton plan, puis la chaîne gén. 10 × capture
+    var main = o.plan || optimize(target, Object.assign({}, s, { topNeed: 1 }), 'renta', { allowOpti: o.allowOpti !== false }).plan;
+    var D = main.days, n0 = main.need && main.need[target] ? main.need[target] : 1, genPart = main.value - valueX * n0;
+    var bm = o.mult === undefined ? bestMultiply(target, s, o.mode || 'renta', [2]) : o.mult;
+    var mc = bm ? multiply(target, s, { L: bm.L, opti: bm.opti, N: [2], start: n0, horizonDays: Math.max(1, H - D + 1) }) : null;
+    function at(curve, tau) {
+      if (!curve) return { count: n0, att: 0 };
+      var c = curve[0]; for (var i = 1; i < curve.length && curve[i].d <= tau + 1e-9; i++) c = curve[i];
+      return c;
+    }
+    function cumB(d, curve) {
+      if (d < D) return (genPart - main.kamas) * d / Math.max(D, 1e-9);
+      var c = at(curve, d - D);
+      return genPart - main.kamas + c.count * valueX - c.att * (mc ? mc.costPerAtt : 0);
+    }
+    var cB = mc && mc.curveClones, cC = mc && mc.curveNoClones;
+    function cross(curve) {   // à partir de quel jour la gén. 10 reste devant la gén. 2 jusqu'à la fin (au demi-jour près)
+      if (!(cumB(H, curve) > cumA(H))) return null;
+      var d = H; while (d - 0.5 >= 0 && cumB(d - 0.5, curve) > cumA(d - 0.5)) d -= 0.5;
+      return d;
+    }
+    var rows = weeks.map(function (w) { var d = w * 7; return { week: w, A: cumA(d), B: cumB(d, cB), C: cumB(d, cC) }; });
+    return { weeks: weeks, rows: rows, A: A, D: D, plan: main, valueX: valueX,
+             chain: mc && { L: mc.L, opti: mc.opti, p: mc.p, pEff: mc.pEff, T: mc.T, partner: mc.partner, costPerAtt: mc.costPerAtt },
+             crossClones: cross(cB), crossNoClones: cross(cC), cumA: cumA, cumB: function (d) { return cumB(d, cB); }, cumC: function (d) { return cumB(d, cC); } };
   }
 
   // ---------------------------------------------------------------- brisage Muldo / Volkorne
@@ -802,6 +873,7 @@
               optimize: optimize, uniformPolicy: uniformPolicy, gensOf: gensOf, levelAnalysis: levelAnalysis, finalCross: finalCross, brisage: brisage, resultValue: resultValue, profitability: profitability, BR: BR, statAtLevel: statAtLevel, runeLine: runeLine, brisageDD: brisageDD, bestBrisageLevel: bestBrisageLevel, bestPerSimple: bestPerSimple,
               SCROLLS: SCROLLS, SCROLL_STATS: SCROLL_STATS, scrollName: scrollName, scrollValues: scrollValues, genetonValue: genetonValue,
               TOURS: TOURS, canon: canon, outcomesInd: outcomesInd, failStats: failStats, poolSeries: poolSeries, canRecycle: canRecycle, freshFor: freshFor, placesOf: placesOf,
+              weekly: weekly, serenHours: serenHours,
               cascade: cascade, freshSplit: freshSplit, carrierP: carrierP, leftoverOf: leftoverOf, multiply: multiply, bestMultiply: bestMultiply, partnerFor: partnerFor, chainP: chainP, MULT_LEVELS: MULT_LEVELS, bestBrisageTime: bestBrisageTime, saleDD: saleDD, instantBest: instantBest };
   if (typeof module !== 'undefined') module.exports = API; else root.DD = API;
 })(this);

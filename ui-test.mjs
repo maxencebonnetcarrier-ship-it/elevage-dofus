@@ -57,12 +57,22 @@ try {
   const zd = i => numP(z100[i].split(' ¦ ')[5]), zw = i => numP(z100[i].split(' ¦ ')[3]);
   check('tableau 8 (100 visées) : 6 tailles, débit qui monte avec les enclos, 100 plus vite avec 6 enclos', z100.length === 6 && zw(5) > zw(1) && zw(1) > zw(0) && zd(5) < zd(1) && z100[5].includes('ton plan'), [z100[1], z100[5]]);
   await selP('planCount', 1);
-  // plafond relevé à 140 000 : les deux barres le suivent, l'XP va plus vite partout
+  // par défaut : barres à 200 000 (niveau d'éleveur 200), T4 au tableau 3, le plus court des quatre tiers
+  const bars0 = await ev(`[...document.querySelectorAll('[data-fill]')].map(g => g.getAttribute('aria-valuenow')).join(',') + '|' + document.querySelector('main [data-k="barMax"]').value`);
+  const tierXP = await ev(`(() => { const t = [...document.querySelectorAll('main table')].find(t => t.textContent.includes('T4 · 200 000')); if (!t) return null; const r = [...t.querySelectorAll('tr')].find(r => r.textContent.startsWith('Barre XP')); return [...r.querySelectorAll('button')].map(b => b.textContent); })()`);
+  const tdays = (tierXP || []).map(numP);
+  check('par défaut : barres à 200 000, tableau 3 avec T4, plan le plus court en T4', bars0 === '200000,200000|200000' && tdays.length === 4 && tdays[3] <= tdays[2] && tdays[3] < tdays[0], [bars0, tierXP]);
+  // 1 bis. semaine par semaine : gén. 2 en boucle, gén. 10 en clonant, sans cloner ; 8 semaines ; la gén. 10 passe devant à une semaine donnée
+  const wk = await tblAfter('1 bis.');
+  const wkHead = await ev(`(() => { const h = [...document.querySelectorAll('main h3')].find(x => x.textContent.startsWith('1 bis.')); let n = h && h.nextElementSibling; while (n && !n.querySelector('table')) n = n.nextElementSibling; return n ? [...n.querySelectorAll('thead th')].length : 0; })()`);
+  const wA = (wk[0] || '').split(' ¦ '), wB = (wk[1] || '').split(' ¦ ');
+  check('1 bis. semaine par semaine : 3 lignes, 8 semaines, gén. 2 qui monte chaque semaine, la gén. 10 en clonant passe devant à une semaine dite', wk.length === 3 && wkHead === 10 && numP(wA[2].split('+')[0]) > numP(wA[1].split('+')[0]) && /semaine \d+/.test(wB[9] || '') && wA[0].includes('neurones à vendre'), [wkHead, wA.slice(0, 3), wB[9]]);
+  // plafond baissé à 140 000 : les deux barres le suivent, l'XP va moins vite
   const xp100 = async () => (await tblAfter('4.')).find(r => r.startsWith('100')).split(' ¦ ')[1];
-  const t80 = await xp100();
+  const t200 = await xp100();
   await selP('barMax', 140000);
   const bars = await ev(`[...document.querySelectorAll('[data-fill]')].map(g => g.getAttribute('aria-valuenow')).join(',')`), t140 = await xp100();
-  check('plafond 140 000 : les deux barres montent à 140 000, temps d’XP jusqu’au niveau 100 plus court', bars === '140000,140000' && t140 !== t80, [bars, t80, t140]);
+  check('plafond 140 000 : les deux barres descendent à 140 000, temps d’XP jusqu’au niveau 100 différent', bars === '140000,140000' && t140 !== t200, [bars, t200, t140]);
   await selP('barMax', 80000);
   await ev(`document.querySelector('tr[data-mode="jours"]').click()`); await sleep(3500);
   const sJ = await tblAfter('1.'), oJ = await tblAfter('2.');
@@ -245,6 +255,19 @@ try {
   await send('Page.reload'); await sleep(2500);
   const v9b = await ev(`document.querySelector('main [data-k="eleveur"]').value + '|' + document.querySelector('main [data-k="enclos"]').value`);
   check('version 8 → 9 : un niveau d’éleveur saisi (83, 3 enclos) reste', v9b === '83|3', v9b);
+  // 7 quater. mise à niveau 9 → 10 : l'ancien 80 000 en Extraits passe à 200 000 ; un plafond et un remplissage choisis restent
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 9, expert: false, barMax: 80000, xpFam: 'Extrait', fertFam: 'Extrait', seren: 6000, fuel: { 'Maturité': [0, 0, 0, null], 'Expérience': [0, 0, 0, null] } }))`);
+  await send('Page.reload'); await sleep(2500);
+  const v10 = await ev(`[...document.querySelectorAll('[data-fill]')].map(g => g.getAttribute('aria-valuenow')).join(',') + '|' + document.querySelector('main [data-k="barMax"]').value`);
+  // onglet rentabilité : les combinaisons avec Élixir d'XP ou de Maturité sont chiffrées (avant : « prix de carburant manquant »)
+  await ev(`document.querySelector('[data-expert="1"]').click()`); await sleep(2500);
+  await ev(`location.hash = '#renta'`); await sleep(4000);
+  const elx = await ev(`document.querySelectorAll('[data-fuel^="Élixir|"]').length + '|' + (document.querySelector('main').textContent.match(/prix de carburant manquant/g) || []).length`);
+  check('version 9 → 10 : barres 80 000 → 200 000, Élixirs d’XP et de Maturité chiffrés (aucun prix de carburant manquant)', v10 === '200000,200000|200000' && /^[1-9]\d*\|0$/.test(elx), [v10, elx]);
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 9, expert: false, barMax: 140000, xpFam: 'Philtre', xpFill: 120000, fertFam: 'Philtre', fertFill: 140000 }))`);
+  await send('Page.reload'); await sleep(2500);
+  const v10b = await ev(`[...document.querySelectorAll('[data-fill]')].map(g => g.getAttribute('aria-valuenow')).join(',') + '|' + document.querySelector('main [data-k="barMax"]').value`);
+  check('version 9 → 10 : un plafond choisi (140 000) et une barre remplie à 120 000 restent', v10b === '120000,140000|140000', v10b);
   // 7 bis. mise à niveau 5 → 6 : 12 enclos ramenés à 6, anciennes options retirées
   await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 5, expert: true, enclos: 12, parentsOnly: true, cloneKeepsLevel: true, neurone: 36000 }))`);
   await send('Page.reload'); await sleep(2500);
@@ -276,10 +299,16 @@ try {
   await ev(`localStorage.removeItem('dd-elevage-v1')`); await send('Page.reload'); await sleep(2500);
   await ev(`document.querySelector('[data-expert="1"]').click()`); await sleep(600);
   await ev(`location.hash = '#objectif'`); await sleep(1500);
-  const fb0 = await ev(`(document.getElementById('carburants') || {}).textContent || ''`);
+  const fbE = await ev(`(document.getElementById('carburants') || {}).textContent || ''`);
   const norm = t => t.replace(/[\s  ]/g, '');
+  check('barres en Élixirs par défaut : coût 0, repère HDV « incomplet » (aucun prix relevé pour les Élixirs d’XP et de Maturité), jamais « 0 kamas »', norm(fbE).startsWith('Carburants:0kamas') && norm(fbE).includes('repèreincomplet') && !norm(fbE).includes('vaudraient0kamas'), fbE.slice(0, 260));
+  // coûts aux Extraits (barres à 80 000) : le repère HDV est complet
+  await ev(`localStorage.setItem('dd-elevage-v1', JSON.stringify({ version: 10, expert: true, barMax: 80000, xpFam: 'Extrait', fertFam: 'Extrait' }))`);
+  await send('Page.reload'); await sleep(2500);
+  await ev(`location.hash = '#objectif'`); await sleep(1500);
+  const fb0 = await ev(`(document.getElementById('carburants') || {}).textContent || ''`);
   check('carburants à 0 : coût 0 sur l’élevage, repère HDV affiché', norm(fb0).startsWith('Carburants:0kamas') && /vaudraient[\d]+kamas/.test(norm(fb0)) && !norm(fb0).includes('vaudraient0kamas'), fb0.slice(0, 160));
-  for (const [i, v] of [[0, '12.5'], [1, '363'], [2, '347']]) { await ev(`(() => { const e = document.querySelector('#mes-prix [data-k="fuel.Expérience.${i}"]'); e.value = '${v}'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1200); }
+  for (const [i, v] of [[0, '12.5'], [1, '363'], [2, '347'], [3, '500']]) { await ev(`(() => { const e = document.querySelector('#mes-prix [data-k="fuel.Expérience.${i}"]'); e.value = '${v}'; e.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(1200); }
   const fb1 = await ev(`(document.getElementById('carburants') || {}).textContent || ''`);
   const m1 = norm(fb1).match(/^Carburants:(\d+)kamas.*soit(\d+)parenclossurtes(\d)enclos/);
   check('prix des carburants d’XP saisis : le coût s’affiche, partagé par enclos', m1 && +m1[1] > 0 && +m1[3] >= 1 && Math.abs(+m1[2] * +m1[3] - +m1[1]) <= +m1[3], fb1.slice(0, 160));

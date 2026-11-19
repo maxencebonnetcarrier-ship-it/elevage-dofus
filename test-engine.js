@@ -6,7 +6,8 @@ const DEF = require('./defaults.js');
 let n = 0, fails = 0;
 function t(name, fn) { n++; try { fn(); console.log('OK  ' + name); } catch (e) { fails++; console.log('KO  ' + name + ' — ' + e.message); } }
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg || ''} obtenu ${a}, attendu ${b} ± ${tol}`);
-const S = Object.assign({}, JSON.parse(JSON.stringify(DEF)), { refillH: 24 / DEF.connexions });
+// tests de calcul : réglages de référence (barres en Extraits à 80 000, sérénité 6 000 à corriger) ; les défauts se testent à part (DEF)
+const S = Object.assign({}, JSON.parse(JSON.stringify(DEF)), { refillH: 24 / DEF.connexions, xpFam: 'Extrait', fertFam: 'Extrait', seren: 6000, serenTime: false });
 // mêmes réglages, carburants au prix HDV de référence (les défauts sont à 0 : l'utilisateur fabrique ses carburants)
 const SR = Object.assign({}, S, { fuel: JSON.parse(JSON.stringify(DEF.fuelRef)) });
 
@@ -386,9 +387,61 @@ t('chance confirmée en jeu : Prune et Rousse × Rousse, parents niveau 40 → 4
   near(st.p, 0.42, 0.005);
   assert.strictEqual(E.partnerFor('Prune et Rousse', 40, false, S).c, 'Rousse');
 });
-t('réglages par défaut : éleveur 200, 6 enclos (tous débloqués)', () => {
-  assert.strictEqual(DEF.version, 9); assert.strictEqual(DEF.eleveur, 200); assert.strictEqual(DEF.enclos, 6);
+t('réglages par défaut : éleveur 200, 6 enclos (tous débloqués), barres à 200 000 (Élixirs), sérénité 2 500', () => {
+  assert.strictEqual(DEF.version, 10); assert.strictEqual(DEF.eleveur, 200); assert.strictEqual(DEF.enclos, 6);
   assert.strictEqual(E.placesOf(S), 60);
+  assert.strictEqual(DEF.barMax, 200000); assert.strictEqual(DEF.xpFam, 'Élixir'); assert.strictEqual(DEF.fertFam, 'Élixir'); assert.strictEqual(DEF.seren, 2500);
+  assert.strictEqual(E.fillOf(DEF.xpFam, null), 200000);
+  // les Élixirs de Maturité et d'Expérience existent : une case à 0 (fabriqué), pas « recette inexistante »
+  assert.strictEqual(DEF.fuel['Maturité'][3], 0); assert.strictEqual(DEF.fuel['Expérience'][3], 0);
+  const D = Object.assign({}, JSON.parse(JSON.stringify(DEF)), { refillH: 12 });
+  assert.ok(E.levelCost(1, 100, D) === 0 && E.fertCost(D) === 0, 'carburants fabriqués : 0 kama, aucun prix manquant');
+});
+t('barres à 200 000 : l’XP monte plus vite qu’à 180 000 et 80 000 ; même stratégie → plan plus court', () => {
+  const at = F => Object.assign({}, S, { xpFam: E.FAMILIES[E.tierOf(F)], fertFam: E.FAMILIES[E.tierOf(F)], xpFill: F, fertFill: F, enclos: 6, fuel: JSON.parse(JSON.stringify(DEF.fuel)) });
+  const x80 = E.xpPerHour('Extrait', 12, 80000), x180 = E.xpPerHour('Potion', 12, 180000), x200 = E.xpPerHour('Élixir', 12, 200000);
+  near(x80 * 12, 43200, 1e-6);                                   // 60 points par minute pendant 12 h
+  // depuis 200 000 en 12 h : 20 000 à 240 / min, 40 000 à 180 / min, puis 120 / min le reste du temps
+  near(x200 * 12, 20000 + 40000 + 120 * (720 - 20000 / 240 - 40000 / 180), 1e-6);
+  assert.ok(x200 > x180 && x180 > x80, [x80, x180, x200]);
+  const pol = E.uniformPolicy('Prune et Rousse', 100, false, 2);
+  const d80 = E.plan('Prune et Rousse', pol, at(80000)).days, d200 = E.plan('Prune et Rousse', pol, at(200000)).days;
+  assert.ok(d200 < d80, [d80, d200]);
+  assert.strictEqual(E.plan('Prune et Rousse', pol, at(200000)).missing.length, 0);
+});
+t('sérénité : 2 500 → 0 à chaque fournée, × 2 plus vite que les autres jauges, pendant ta connexion (sinon une connexion de plus)', () => {
+  const D = Object.assign({}, JSON.parse(JSON.stringify(DEF)), { refillH: 12 });
+  assert.strictEqual(DEF.seren, 2500); assert.strictEqual(DEF.serenSpeed, 2); assert.strictEqual(DEF.serenOnline, true);
+  near(E.serenHours(D), 2500 / 240 / 2 / 60, 1e-9);                                              // barre à 200 000 : 40 points / 10 s, × 2
+  near(E.serenHours(Object.assign({}, D, { fertFam: 'Extrait', fertFill: null })), 2500 / 60 / 2 / 60, 1e-9);   // barre à 80 000 : 10 / 10 s
+  near(E.serenHours(Object.assign({}, D, { serenOnline: false })), 12, 1e-9);                     // pas en ligne : la fournée attend 12 h
+  near(E.serenHours(Object.assign({}, D, { seren: 0 })), 0, 1e-12);
+  const z = E.serenHours(D), off = Object.assign({}, D, { serenTime: false });
+  near(E.prepHours(1, 1, D) - E.prepHours(1, 1, off), z, 1e-9);                                  // s'ajoute à la préparation
+  assert.ok(E.plan('Prune et Rousse', E.uniformPolicy('Prune et Rousse', 60, false, 2), Object.assign({}, D, { serenOnline: false, enclos: 6 })).days >
+            E.plan('Prune et Rousse', E.uniformPolicy('Prune et Rousse', 60, false, 2), Object.assign({}, D, { enclos: 6 })).days);
+});
+t('semaine par semaine : gén. 2 en boucle contre gén. 10 puis gén. 10 × capture (avec / sans clones)', () => {
+  const D = Object.assign({}, JSON.parse(JSON.stringify(DEF)), { refillH: 12, topNeed: 1 });
+  const w = E.weekly('Prune et Rousse', D, {});
+  assert.deepStrictEqual(w.weeks, [1, 2, 3, 4, 6, 8, 12, 16]);
+  assert.strictEqual(E.TREE[w.A.target].gen, 2);
+  near(w.rows[1].A - w.rows[0].A, 7 * w.A.rate, 1e-3);                                            // la gén. 2 rapporte autant chaque semaine
+  near(w.A.rate, w.A.perDayN * w.A.perUnit, 1e-3);
+  near(w.valueX, 10 * DEF.neurone * (1 - DEF.tax), 1e-9);
+  const d0 = w.D / 2; near(w.cumB(d0), w.cumB(w.D - 1e-9) * d0 / (w.D - 1e-9), 1);                 // pendant le plan : étalé
+  // cloner coûte deux gén. 10 stériles (qu'on aurait extraites) : un creux juste après, puis bien plus à la fin
+  const last = w.rows[w.rows.length - 1]; assert.ok(last.B > 2 * last.C, [last.B, last.C]);
+  assert.ok(w.rows.every(r => r.week * 7 < w.crossClones || r.B > r.C), 'devant la gén. 2, cloner rapporte plus que ne pas cloner');
+  assert.ok(w.crossClones !== null && w.crossClones > w.D, w.crossClones);                         // la gén. 10 passe devant, après le plan
+  assert.ok(w.crossNoClones === null || w.crossNoClones > w.crossClones, w.crossNoClones);
+  const d = w.crossClones; assert.ok(w.cumB(d) > w.cumA(d) && w.cumB(d - 0.5) <= w.cumA(d - 0.5));
+});
+t('Makina de la génération du bébé (constaté en jeu : une gén. 3 se fait avec une Makina 3, pas une 4)', () => {
+  const pol = E.uniformPolicy('Prune et Rousse', 40, true, 1), pl = E.plan('Prune et Rousse', pol, S);
+  const gens = [...new Set(pl.nodes.map(n => n.gen))].sort((a, b) => a - b);
+  assert.deepStrictEqual(Object.keys(pl.optiCount).map(Number).sort((a, b) => a - b), gens);
+  pl.nodes.forEach(n => near(n.optiK, n.att * E.optiCost(n.gen, S), 1e-6, n.name));
 });
 
 console.log(`\n${n - fails}/${n} tests verts`);

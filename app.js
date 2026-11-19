@@ -82,17 +82,27 @@
         if (saved.runePrices) ['Rune Fo', 'Rune Cha', 'Rune Age'].forEach(function (k) { var v = saved.runePrices[k]; if (v === null || v === '') delete saved.runePrices[k]; });
         saved.version = 9;
       }
+      // version 9 → 10 : barres à 200 000 par défaut (niveau d'éleveur 200) ; les Élixirs de Maturité et d'Expérience existent (seul leur prix
+      // manquait) ; sérénité ramenée de 2 500 à 0 à chaque fournée (son temps compte). L'ancien 80 000 par défaut et les barres restées en
+      // Extraits passent à 200 000, un autre plafond ou un remplissage choisi reste ; l'ancienne sérénité 6 000 par défaut passe à 2 500, une saisie reste.
+      if (saved && saved.version === 9) {
+        if (saved.barMax == null || saved.barMax === 80000) {
+          delete saved.barMax;
+          ['xpFam', 'fertFam'].forEach(function (k) { var fk = k === 'xpFam' ? 'xpFill' : 'fertFill';
+            if ((saved[k] == null || saved[k] === 'Extrait') && (saved[fk] == null || saved[fk] === 80000)) { delete saved[k]; delete saved[fk]; } });
+        }
+        if (saved.seren === 6000) delete saved.seren;
+        if (saved.fuel) ['Maturité', 'Expérience'].forEach(function (j) { var row = saved.fuel[j]; if (Array.isArray(row) && row[3] == null) row[3] = 0; });
+        saved.version = 10;
+      }
       if (saved && saved.version === d.version) {
         Object.keys(saved).forEach(function (k) {
           if (k === 'fuel' || k === 'brisage' || k === 'optiBuy' || k === 'runePrices' || k === 'scrollPrices' || k === 'ingPrices' || k === 'makina10' || k === 'extract' || k === 'ddBrise' || k === 'sell200' || k === 'calc') d[k] = Object.assign(d[k] || {}, saved[k]); else d[k] = saved[k];
         });
       }
     } catch (e) { /* réglages illisibles : on garde les valeurs par défaut */ }
-    // tiers : aucune barre ne monte en T4 pour l'XP et la Maturité (pas d'Élixir) → T3 au plus
-    if (d.xpFam === 'Élixir') d.xpFam = 'Potion';
-    if (d.fertFam === 'Élixir') d.fertFam = 'Potion';
     if (!d.done || typeof d.done !== 'object') d.done = {};
-    if (d.barMax == null) d.barMax = 80000;     // 80 000 au niveau d'éleveur 60 (constaté en jeu)
+    if (d.barMax == null) d.barMax = 200000;    // 200 000 au niveau d'éleveur 200, 80 000 au niveau 60 (constaté en jeu)
     if (d.eleveur == null) d.eleveur = 200;      // niveau d'éleveur par défaut : 200, chacun met le sien
     if (!d.planMode) d.planMode = 'renta';       // la stratégie qui compte le coût des Makinas
     if (d.porteurs == null) d.porteurs = true;   // les ratés d'une étape remplacent une couleur demandée plus tard
@@ -270,7 +280,7 @@
     var modes = { renta: E.optimize(X, s, 'renta', { allowOpti: true }), jours: E.optimize(X, s, 'jours', { allowOpti: true }), sans: E.optimize(X, s, 'jours', { allowOpti: false }) };
     var main = modes[planMode()];
     var tmax = E.tierOf(+S.barMax || 200000), tiers = { xpFam: [], fertFam: [] };
-    [0, 1, 2].forEach(function (i) {
+    [0, 1, 2, 3].forEach(function (i) {
       ['xpFam', 'fertFam'].forEach(function (key) {
         if (i > tmax) { tiers[key].push(null); return; }
         var t = clone(s); t[key] = E.FAMILIES[i]; t[FILLKEY[key]] = null; tiers[key].push(E.plan(X, main.policy, t));
@@ -308,7 +318,9 @@
     var grid = [1, 2, 3, 4, 6, 8, 12, 24].map(function (cx) {
       return { cx: cx, v: [1, 2, 3, 4, 5, 6].map(function (e) { var t = clone(s); t.refillH = 24 / cx; t.enclos = e; var b = E.bestMultiply(X, t, mm, [2]); return b ? b.perDay : null; }) };
     });
-    PCACHE = { key: k, val: { s: s, X: X, modes: modes, main: main, tiers: tiers, uni: uni, noCarry: noCarry, sizes: sizes, mult: mult, grid: grid } };
+    // semaine par semaine : gén. 2 en boucle, ou la 1re X par ton plan puis X × capture (avec et sans clones)
+    var week = E.weekly(X, s, { plan: mult.first, mult: mult.mine, mode: mm, allowOpti: planMode() !== 'sans' });
+    PCACHE = { key: k, val: { s: s, X: X, modes: modes, main: main, tiers: tiers, uni: uni, noCarry: noCarry, sizes: sizes, mult: mult, grid: grid, week: week } };
     return PCACHE.val;
   }
   function optiTotal(pl) { return Object.keys(pl.optiCount).reduce(function (a, g) { return a + pl.optiCount[g]; }, 0); }
@@ -328,7 +340,7 @@
   function slotH(h, s) { return Math.max(1, Math.ceil(h / s.refillH - 1e-9)) * s.refillH; }
   // barre cliquable : clique où tu la remplis (jusqu'au plafond de ton niveau), tiers marqués ; dit jusqu'où elle descend avant ta connexion suivante
   function gauge(famKey, label, s) {
-    var max = Math.min(+S.barMax || 200000, 180000), key = FILLKEY[famKey], F = E.fillOf(s[famKey], s[key]), t = E.tierOf(F);
+    var max = +S.barMax || 200000, key = FILLKEY[famKey], F = E.fillOf(s[famKey], s[key]), t = E.tierOf(F);
     var low = F - E.drain(F, s.refillH * 60);
     var segs = [[0, 80000, 'T1'], [80000, 140000, 'T2'], [140000, 180000, 'T3'], [180000, 200000, 'T4']].map(function (x) {
       return '<span class="gseg" style="left:' + x[0] / 2000 + '%;width:' + (x[1] - x[0]) / 2000 + '%">' + x[2] + '</span>';
@@ -337,6 +349,40 @@
       '<div class="gauge2" data-fill="' + famKey + '" data-max="' + max + '" role="slider" aria-valuemin="1000" aria-valuemax="' + max + '" aria-valuenow="' + F + '" title="clique pour remplir la barre jusqu’ici">' +
       '<i class="glow" style="left:' + low / 2000 + '%;width:' + (F - low) / 2000 + '%"></i><i class="gfill" style="width:' + low / 2000 + '%"></i>' + segs +
       '<span class="gno" style="left:' + max / 2000 + '%" title="au-dessus de ton plafond"></span></div></div>';
+  }
+  /* Tableau « semaine par semaine » (demande de l'utilisateur, 19/11/2026) : kamas en poche à la fin de chaque semaine, si tu extrais
+     ce que tu as produit, pour la gén. 2 en boucle (neurones vendus tout de suite) et pour la gén. 10 puis gén. 10 × capture, avec et sans
+     clonage des gén. 10 stériles. Le calcul est dans engine.js (weekly). */
+  function weekSection(P, X, s) {
+    var W = P.week; if (!W || !W.A) return '';
+    var out = h('h3', null, '1 bis. Semaine par semaine : ce que tu as gagné en tout (gén. 2 et neurones, ou la ' + esc(X) + ')');
+    var A = W.A, ch = W.chain, nA = A.perDayN * 7 * E.TREE[A.target].gen;
+    function M(x) {   // montants courts : 8,1 M · 950 k
+      var a = Math.abs(x); return a >= 1e6 ? f(x / 1e6, a >= 1e8 ? 0 : 1) + ' M' : a >= 1e4 ? f(x / 1e3, 0) + ' k' : f(x);
+    }
+    function cells(get) {
+      return W.rows.map(function (r, i) {
+        var v = get(r), prev = i ? get(W.rows[i - 1]) : 0, wk = r.week - (i ? W.rows[i - 1].week : 0);
+        return '<b class="' + (v >= 0 ? 'ok' : 'ko') + '">' + M(v) + '</b><br><span class="mini">' + (v - prev >= 0 ? '+' : '') + M((v - prev) / wk) + ' / sem.</span>';
+      });
+    }
+    function crossTxt(d) { return d == null ? '<span class="dim">pas en ' + W.weeks[W.weeks.length - 1] + ' semaines</span>' : '<b class="gold">semaine ' + Math.ceil(d / 7 - 1e-9) + '</b><br><span class="mini">jour ' + f(d, 0) + '</span>'; }
+    var rows = [
+      { cls: 'alt', cells: ['🧠 <b>Gén. 2 en boucle, neurones vendus</b><br><span class="mini">' + dd(A.target) + ', parents niv. ' + A.L + (A.opti ? ' + Makina' : '') +
+        ' · ' + f(A.perDayN, 1) + ' par jour · ≈ ' + f(nA) + ' neurones à vendre / sem.</span>'].concat(cells(function (r) { return r.A; })).concat(['référence']) },
+      { cls: 'best', cells: ['🔟 <b>' + esc(X) + ' (ton plan, ' + days(W.D) + '), puis ' + esc(X) + ' × ' + esc(ch ? ch.partner : 'capture') + ', en clonant</b><br><span class="mini">' +
+        (ch ? 'chance ' + pct(ch.p) + ', parents niv. ' + ch.L + (ch.opti ? ' + Makina' : '') + ', une tentative toutes les ' + f(ch.T, 0) + ' h · ' : '') +
+        'à pleine vitesse ≈ ' + f(Math.floor(E.placesOf(s) / 2) * (ch ? ch.pEff * 24 / ch.T : 0) * 7 * E.TREE[X].gen) + ' neurones / sem.</span>'].concat(cells(function (r) { return r.B; })).concat([crossTxt(W.crossClones)]) },
+      { cls: '', cells: ['↳ ' + esc(X) + ' puis ' + esc(X) + ' × ' + esc(ch ? ch.partner : 'capture') + ', <b>sans cloner</b><br><span class="mini">une seule chaîne : chaque ' + esc(X) + ' stérile est extraite</span>']
+        .concat(cells(function (r) { return r.C; })).concat([crossTxt(W.crossNoClones)]) }
+    ];
+    out += table(['Stratégie'].concat(W.weeks.map(function (w) { return 'Sem. ' + w; })).concat(['Passe devant la gén. 2']), rows, ['l']);
+    out += '<p class="note">Chaque case : kamas (M = million) <b>en poche à la fin de la semaine si tu extrais tout à cette date</b> (neurones × (1 − taxe) + génétons au prix des parchemins − Makinas, filets et carburants à tes prix), et en dessous ce que la période rapporte par semaine. ' +
+      '<b>Gén. 2 en boucle</b> : deux captures, chaque bébé extrait tout de suite (2 neurones), toutes tes places en continu. ' +
+      '<b>' + esc(X) + '</b> : pendant ton plan (' + days(W.D) + '), dépenses et génétons étalés ; les montures du chemin ne sont comptées qu’à la fin (estimation basse). Ensuite, ' + esc(X) + ' × ' + esc(ch ? ch.partner : 'capture') +
+      ' : chaque ' + esc(X) + ' née vaut ' + f(W.valueX) + ' (ses neurones) ; <b>cloner</b> deux ' + esc(X) + ' stériles lance une chaîne de plus, jusqu’à remplir tes places : c’est ce qui fait passer la ' + esc(X) + ' devant. ' +
+      'Non compté : <b>le marché</b> — vendre autant de neurones fera baisser leur prix ; regarde la ligne « neurones à vendre / sem. » avant de choisir. Tes places libres au début de la chaîne peuvent aussi faire des gén. 2.</p>';
+    return out;
   }
   // quoi faire d'une dragodinde déjà produite (stérile, en trop, ratée) : extraire, briser au meilleur niveau en temps, ou vendre au niveau 200
   function brSol(X, s) {
@@ -396,7 +442,7 @@
       field('Niveau d’éleveur', 'eleveur', 'number', { min: 1, max: 200, step: 1, note: emax + ' enclos débloqué' + (emax > 1 ? 's' : '') + (emax < 6 ? ' ; le prochain au niveau ' + ENCLOS_LVL[emax] : '') + ' — le plan les prend tous' }) +
       field('Enclos utilisés', 'enclos', 'select', { num: 1, options: ENCLOS_LVL.slice(0, emax).map(function (l, i) { return [i + 1, (i + 1) + ' (' + (i + 1) * 10 + ' places)']; }) }) +
       field('Connexions par jour', 'connexions', 'select', { num: 1, options: [1, 2, 3, 4, 6, 8, 12, 24].map(function (x) { return [x, x + ' (toutes les ' + f(24 / x, 1) + ' h)']; }) }) +
-      field('Plafond de tes barres', 'barMax', 'select', { num: 1, note: 'selon ton niveau d’éleveur (80 000 au niveau 60)', options: [[80000, '80 000 (T1)'], [140000, '140 000 (T2)'], [180000, '180 000 (T3)'], [200000, '200 000 (T4)']] }) +
+      field('Plafond de tes barres', 'barMax', 'select', { num: 1, note: '200 000 au niveau d’éleveur 200, 80 000 au niveau 60 ; pas facile de la tenir pleine : mets ce que tu remplis vraiment', options: [[80000, '80 000 (T1)'], [140000, '140 000 (T2)'], [180000, '180 000 (T3)'], [200000, '200 000 (T4)']] }) +
       field('Porteurs', 'porteurs', 'check', { note: 'les ratés d’une étape remplacent une couleur demandée plus tard' }) + '</div>' + gauge('xpFam', '🍖 Barre XP (Mangeoire)', s) + gauge('fertFam', '💗 Amour · Endurance · Maturité', s) +
       '<p class="mini">Clique sur une barre là où tu la remplis à chaque connexion. Elle se vide ensuite (10, 20, 30 puis 40 points toutes les 10 s selon le tier) : la partie claire est ce qui part avant ta connexion suivante. ' +
       'Carburants comptés en kamas seulement si tu mets leur prix dans « Mes prix ».</p></div>';
@@ -418,6 +464,9 @@
     out += '<p class="note">« Gain par jour » = (neurones de la ' + esc(X) + ' + génétons gagnés en chemin − Makinas, carburants et filets) ÷ durée. « Chaque jour gagné coûte » : kamas en plus par jour gagné face au plus rapide sans Makina. ' +
       '« Le plus rentable en temps » prend les Makinas seulement là où elles paient leur prix. ' +
       (S.porteurs !== false ? '<b>Porteurs</b> : ' + f(pl.carried || 0, 1) + ' ratés réutilisés plus tard à la place d’une monture à refaire, soit <b>' + f(P.noCarry.capTot - pl.capTot) + ' captures</b> et <b>' + days(P.noCarry.days - pl.days) + '</b> de moins (ligne « sans les porteurs »).' : '') + '</p>';
+
+    // ---- 1 bis. semaine par semaine : gén. 2 et neurones vendus, ou la gén. 10 puis gén. 10 × capture
+    out += weekSection(P, X, s);
 
     // ---- 2. dans l'ordre
     out += h('h3', null, '2. Ce qu’il faut faire, dans l’ordre');
@@ -458,14 +507,14 @@
     var tierRows = [['xpFam', 'Barre XP'], ['fertFam', 'Amour · Endurance · Maturité']].map(function (r) {
       var list = P.tiers[r[0]], cur = E.tierOf(E.fillOf(s[r[0]], s[FILLKEY[r[0]]])), d = list.map(function (p) { return p ? p.days : Infinity; }), min = Math.min.apply(null, d), best = 0;
       while (d[best] > min + 0.05) best++;
-      return [esc(r[1])].concat([0, 1, 2].map(function (i) {
+      return [esc(r[1])].concat([0, 1, 2, 3].map(function (i) {
         if (!list[i]) return '<span class="dim">🔒 plafond</span>';
         return '<button type="button" class="tierbtn' + (i === cur ? ' cur' : '') + '" data-tier="' + r[0] + '|' + E.FAMILIES[i] + '">' + days(d[i]) + '</button>';
       })).concat(['<b class="gold">T' + (best + 1) + '</b>' + (best ? ' <span class="mini">−' + days(d[0] - d[best]) + '</span>' : '')]);
     });
-    out += table(['Durée du plan si la barre est pleine en…', 'T1 · 80 000', 'T2 · 140 000', 'T3 · 180 000', 'Le mieux à ton plafond'], tierRows);
+    out += table(['Durée du plan si la barre est pleine en…', 'T1 · 80 000', 'T2 · 140 000', 'T3 · 180 000', 'T4 · 200 000', 'Le mieux à ton plafond'], tierRows);
     out += '<p class="note">' + places + ' places, ' + S.connexions + ' connexions par jour : ta barre XP donne ' + f(xpDay) + ' XP par jour à chaque monture de l’enclos. Une monture ne sort qu’à une connexion : son temps compte en connexions entières. ' +
-      (tmax < 2 ? 'Les tiers 🔒 dépassent ton plafond (' + f(+S.barMax) + ').' : '') + '</p>';
+      (tmax < 3 ? 'Les tiers 🔒 dépassent ton plafond (' + f(+S.barMax) + ').' : '') + ' Barre pleine à 200 000 : pas facile à tenir à chaque connexion ; mets le plafond que tu remplis vraiment, le plan suit.</p>';
 
     // ---- 4. chance selon le niveau (dernier accouplement)
     var last = pl.nodes.filter(function (n) { return n.name === X; })[0], A = last.A, B = last.B;
@@ -488,7 +537,7 @@
         f(1 / p1, 2), oc == null ? '—' : '<b>' + f(oc / p1) + '</b>', f(1 / p0 - 1 / p1, 2), n0.opti ? '<span class="pill g">oui</span>' : 'non'];
     });
     out += table(['Gén.', 'Dragodinde', 'Ton prix d’une Makina<br><span class="mini">vide = le prix du craft</span>', 'Niveau', 'Chance sans', 'Chance avec', 'Makinas par réussite', 'Coût Makina par réussite', 'Accouplements évités par réussite', 'Dans ton plan'], rowsD, ['', 'l']);
-    out += '<p class="note">Une Makina par accouplement (+20 % de chance). Mets ton prix pour chaque génération (une Makina basse est souvent moins chère) : la stratégie du tableau 1 se recalcule. Vide = le prix du craft (somme des ingrédients, prix moyens HDV du 19/11), pour toutes les générations. Le craft demande le niveau d’éleveur de la recette (gén. 4 : 69, gén. 5 : 89…).</p>';
+    out += '<p class="note">Une Makina par accouplement (+20 % de chance), <b>de la génération du bébé</b> : pour faire une gén. 3, une Makina 3 (pas une 4). Mets ton prix pour chaque génération (une Makina basse est souvent moins chère) : la stratégie du tableau 1 se recalcule. Vide = le prix du craft (somme des ingrédients, prix moyens HDV du 19/11), pour toutes les générations. Le craft demande le niveau d’éleveur de la recette (gén. 4 : 69, gén. 5 : 89…).</p>';
 
     // ---- 6. quoi faire de chaque monture
     out += h('h3', null, '6. Briser, vendre ou extraire : les dragodindes de ton plan (tes prix de vente niveau 200 ici)');
@@ -907,15 +956,19 @@
     var nE = Math.max(1, +S.enclos || 1), tot = pl.fuelK + pl.levK, dep = E.depositTotal(R.s);
     var sr = clone(R.s); sr.fuel = clone(S.fuelRef || DD_DEFAULTS.fuelRef); sr.topNeed = pl.need[PT()];
     var pr = E.plan(PT(), R.main.policy, sr);
+    // repère incomplet : une case du repère HDV sans prix relevé (ex. Élixirs d'XP et de Maturité) ne vaut pas 0, elle est inconnue
+    var refMissing = pr.missing.filter(function (m) { return /carburant|XP/.test(m); });
     return { nE: nE, tot: tot, perEnclos: tot / nE, dep: dep, depPerEnclos: dep === null ? null : dep / nE,
-             refTot: pr.fuelK + pr.levK, refDep: E.depositTotal(sr) };
+             refTot: refMissing.length ? null : pr.fuelK + pr.levK, refDep: E.depositTotal(sr), refMissing: refMissing };
   }
   function fuelBox(R, pl) {
     var c = fuelCosts(R, pl);
     var out = '<div class="box" id="carburants"><b>Carburants : ' + f(c.tot) + ' kamas</b> (Amour · Endurance · Maturité ' + f(pl.fuelK) + ' · XP ' + f(pl.levK) + '), soit <b>' + f(c.perEnclos) + ' par enclos</b> sur tes ' + c.nE + ' enclos.';
     if (c.dep !== null) out += ' Mise de départ : <b>' + f(c.dep) + '</b> (' + f(c.depPerEnclos) + ' par enclos, une seule fois).';
     if (c.tot === 0 && !c.dep) out += '<br><span class="note">Tes prix de carburant sont à 0 (tu les fabriques). Mets un prix dans « Mes prix » : le coût sur ton élevage s’affiche ici. Mets-le pour chaque famille : un carburant laissé à 0 compte gratuit et remplit aussi les tranches basses (un Philtre à 0 remplace un Extrait payant).</span>';
-    out += '<br>Au prix HDV relevé (repère du classeur), ces mêmes carburants vaudraient <b>' + f(c.refTot) + ' kamas</b>' +
+    if (c.refTot === null) out += '<br>Au prix HDV relevé (repère du classeur) : <b>repère incomplet</b>, aucun prix HDV relevé pour ' + c.refMissing.map(esc).join(' · ') +
+      ' (tes barres en ' + tierLong(S.xpFam) + '). Baisse le plafond de tes barres pour voir le repère des tiers relevés.';
+    else out += '<br>Au prix HDV relevé (repère du classeur), ces mêmes carburants vaudraient <b>' + f(c.refTot) + ' kamas</b>' +
       (c.refDep !== null ? ' + ' + f(c.refDep) + ' de mise de départ' : '') + ' : c’est ce que tu gagnes en les fabriquant toi-même.';
     out += '<br><b>Makinas :</b> ' + f(pl.optiK) + ' kamas · <b>Filets :</b> ' + f(pl.filetK) + ' kamas.';
     out += '<br><span class="note"><b>Chaque enclos a ses propres jauges</b> : ses carburants se posent dans cet enclos et nourrissent ses ' + S.perEnclos + ' montures, ' +
@@ -1001,7 +1054,9 @@
     out += '<div class="form">' +
       field('Bonus Optimakina (%)', 'optiBonus', 'number', { min: 0, max: 100, note: '20 depuis la 3.7 (dofuspourlesnoobs), 10 avant' }) +
       field('Bonus du jour (%)', 'alma', 'number', { min: 0, max: 100, note: 'Takeza ou Almanax : +20' }) +
-      field('Sérénité à corriger par fournée', 'seren', 'number', { min: 0 }) +
+      field('Sérénité à ramener à 0 par fournée (points)', 'seren', 'number', { min: 0, note: '2 500 → 0 avant Amour, Endurance et Maturité ; compte en temps et en carburant' }) +
+      field('Vitesse de la sérénité (× les autres jauges)', 'serenSpeed', 'number', { min: 0.1, step: 0.5, note: '2 par défaut : elle va plus vite que les autres (vitesse non documentée)' }) +
+      field('Tu ramènes la sérénité pendant ta connexion', 'serenOnline', 'check', { note: 'sinon la fournée attend ta connexion suivante' }) +
       field('Montures par enclos', 'perEnclos', 'number', { min: 1, max: 10, step: 1 }) +
       field('Marge de captures', 'capMargin', 'number', { min: 0, max: 3, step: 0.05, note: '0 = capture sûre à 100 % ; 0,25 si tu veux une marge pour les sexes' }) + '</div><div class="form" style="margin-top:10px">' +
       field('Cloner les stériles (2 stériles → 1 : même couleur → cette couleur ; deux couleurs → l’une ou l’autre à 50 %)', 'clone', 'check', { note: 'le clone repart au niveau 1 et n’a pas de parents (constaté en jeu : 2 Amande → 1 Amande)' }) +
@@ -1157,13 +1212,16 @@
       'Clone de deux couleurs différentes : l’une ou l’autre, <b>50 % chacune</b> (confirmé en jeu). En moyenne, le calcul ne change pas : chaque stérile de la bonne couleur rend ½ clone utile, qu’on l’apparie à la même couleur (2 → 1) ou à une autre (50 %).',
       'X × une capture de son arbre vise la génération de X, à la même chance : <b>42 %</b> pour Prune et Rousse × Rousse, parents niveau 40 (confirmé en jeu).',
       'Une monture est féconde quand l’Amour, l’Endurance et la Maturité atteignent 20 000. Il n’y a pas de carburant « fécondité » : Dragofesse (Amour), Foudroyeur (Endurance), Abreuvoir (Maturité), Caresseur et Baffeur (Sérénité + et −), Mangeoire (XP). Deux jauges actives à la fois par enclos ; une jauge nourrit toutes les montures de l’enclos.',
-      'Jauges 3.7 : 200 000 points au maximum ; Extrait jusqu’à 80 000, Philtre 140 000, Potion 180 000, Élixir 200 000 ; 10 / 20 / 30 / 40 points toutes les 10 s selon le palier.',
+      'Jauges 3.7 : 200 000 points au maximum ; Extrait jusqu’à 80 000, Philtre 140 000, Potion 180 000, Élixir 200 000 ; 10 / 20 / 30 / 40 points toutes les 10 s selon le palier. Toutes les jauges ont leur Élixir, XP et Maturité comprises (niv. 155 à 195). Barres à 200 000 au niveau d’éleveur 200, 80 000 au niveau 60 (constaté en jeu).',
+      'Une Makina ne sert qu’à la génération du bébé : une gén. 3 se fait avec une Makina 3, pas une 4 (constaté en jeu).',
+      'Sérénité : à chaque fournée, elle se ramène de 2 500 à 0 avant Amour, Endurance et Maturité (indication de l’utilisateur) ; ce temps s’ajoute à la préparation de chaque monture, place d’enclos comprise.',
       'Génétons : seulement si le bébé dépasse toutes les générations des deux arbres ; par parent 2, 4, 8, 16, 30, 60, 120, 240, 500 (gén. 1 à 9).',
       'Gén. 7 et 9 : un seul couple possible par couleur (voir « Chemin »).'
     ]);
     out += h('h3', null, 'Hypothèses (à vérifier en jeu)');
     out += li([
       '<b>Issue d’un raté</b> : modèle de répartition de dofuselevage.fr, non officiel (parents ×8, grands-parents ×3, pénalité selon la génération).',
+      '<b>Vitesse de la sérénité</b> : 2 fois celle des autres jauges (« plus vite », sans chiffre connu en 3.7) ; tu la ramènes pendant ta connexion, en quelques minutes. Réglable dans « Prix et réglages ».',
       '<b>Tours de recroisement</b> : modèle moyen (à chaque tour la moitié de la réserve s’accouple ; ratés et clones y reviennent au niveau 1). En jeu, la chance et les sexes font varier le résultat.',
       '<b>Ton temps de capture</b> : 5 minutes par capture par défaut (réglable dans « Prix et réglages »), compté dans « aller le plus vite ».',
       '<b>Niveau d’une capture</b> : non documenté (niveau 1 par défaut, réglable en haut).',
@@ -1200,7 +1258,7 @@
     if (k === 'enclos' && v != null) v = Math.max(1, Math.min(6, Math.round(v)));
     if (k === 'eleveur' && v != null) v = Math.max(1, Math.min(200, Math.round(v)));
     if (k === 'planCount') v = Math.max(1, Math.round(v || 1));
-    if (k === 'barMax' && v != null) { var F0 = Math.min(+v, 180000); S.xpFill = F0; S.fertFill = F0; S.xpFam = E.FAMILIES[E.tierOf(F0)]; S.fertFam = S.xpFam; }
+    if (k === 'barMax' && v != null) { var F0 = Math.min(+v, 200000); S.xpFill = F0; S.fertFill = F0; S.xpFam = E.FAMILIES[E.tierOf(F0)]; S.fertFam = S.xpFam; }
     if (k === 'xpFam') S.xpFill = null;
     if (k === 'fertFam') S.fertFill = null;
     setPath(k, v);
@@ -1218,7 +1276,7 @@
     var gz = e.target.closest('[data-fill]');
     if (gz) {   // barre cliquée : remplissage à l'endroit du clic, arrondi à 1 000 points
       var rc = gz.getBoundingClientRect(), fam = gz.getAttribute('data-fill'), mx = +gz.getAttribute('data-max') || 200000;
-      var F = Math.max(1000, Math.min(180000, Math.round((e.clientX - rc.left) / rc.width * 200) * 1000));
+      var F = Math.max(1000, Math.min(200000, Math.round((e.clientX - rc.left) / rc.width * 200) * 1000));
       if (F > mx) S.barMax = [80000, 140000, 180000, 200000][E.tierOf(F)];   // tu remplis plus haut que le plafond : il monte au tier cliqué
       S[fam === 'xpFam' ? 'xpFill' : 'fertFill'] = F; S[fam] = E.FAMILIES[E.tierOf(F)]; save(); render(); return;
     }
@@ -1236,6 +1294,6 @@
     if (e.target.closest('[data-reset]')) { if (confirm('Remettre tous les prix et réglages par défaut ?')) { localStorage.removeItem(KEY); S = load(); render(); } }
   });
   window.addEventListener('hashchange', function () { TAB = location.hash.slice(1) || 'plan'; render(); });
-  document.getElementById('ver').textContent = ' · version du 19/11/2026 (Makinas au prix du craft, ingrédients lus dans ta vidéo du 19/11 ; éleveur 200 par défaut)';
+  document.getElementById('ver').textContent = ' · version du 19/11/2026 (barres à 200 000 et éleveur 200 par défaut ; Makinas au prix du craft, ingrédients lus dans ta vidéo du 19/11)';
   render();
 })();

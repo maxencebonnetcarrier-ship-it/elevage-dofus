@@ -2,15 +2,17 @@
    Ombre sinon Kourial, novembre 2026) — coût en kamas pour 1 000 points de jauge, recette la moins chère de chaque famille.
    null = aucun prix connu (un ingrédient sans relevé). Tout se modifie dans l'onglet « Prix et réglages ». */
 var DD_DEFAULTS = {
-  version: 9,
+  version: 10,
   target: 'Prune et Rousse',
   objective: 'jours',
   eleveur: 200,         // niveau d'éleveur par défaut (choix de l'utilisateur, 19/11/2026) : chacun met le sien
   enclos: 6,            // tous les enclos débloqués au niveau 200 (paliers 1, 40, 80, 120, 160, 200)
   perEnclos: 10,
   connexions: 2,
-  xpFam: 'Extrait',
-  fertFam: 'Extrait',
+  // barres remplies à 200 000 (T4, Élixirs) : le plafond au niveau d'éleveur 200 (constaté en jeu, 19/11/2026) ; chacun choisit le sien
+  barMax: 200000,
+  xpFam: 'Élixir',
+  fertFam: 'Élixir',
   capLevel: 1,
   clone: true,          // 2 stériles de la même couleur → 1 de cette couleur, sans parents, au niveau 1 (constaté en jeu : 2 Amande → 1 Amande) ;
                         // 2 stériles de couleurs différentes → l'une ou l'autre, 50 % chacune (confirmé par l'utilisateur, 19/11/2026)
@@ -21,7 +23,11 @@ var DD_DEFAULTS = {
   alma: 0,
   safety: 'moyenne',
   capMargin: 0,   // capture sûre à 100 % (gén. 1) : aucune marge par défaut
-  seren: 6000,
+  // sérénité (indication de l'utilisateur, 19/11/2026) : à chaque fournée, la ramener de 2 500 à 0, puis monter Amour, Endurance, Maturité et XP ;
+  // sa jauge va plus vite que les autres (× 2 : hypothèse, vitesse non documentée en 3.7) ; faite pendant ta connexion (quelques minutes)
+  seren: 2500,
+  serenSpeed: 2,
+  serenOnline: true,
   filet: 310,
   neurone: 35000,   // prix de l'utilisateur, 12/11/2026
   // ce que donne l'extraction des autres espèces (prix de l'utilisateur, 12/11/2026) : Ambre pour le Muldo, Corne pour le Volkorne
@@ -56,16 +62,18 @@ var DD_DEFAULTS = {
   sell200: {},
   // calculateur par dragodinde (comme muldo-calculator) : lots de captures, niveau, Optimakina, tours de recroisement
   calc: { target: 'Prune et Rousse', mult: 1, L: 40, opti: true, k: 2, mode: 'simple', perGen: {} },
-  // carburants : 0 par défaut (tu les fabriques) ; mets un prix pour voir ce qu'ils coûtent. null = recette inexistante.
+  // carburants : 0 par défaut (tu les fabriques) ; mets un prix pour voir ce qu'ils coûtent. Les 24 cases ont une recette
+  // (DofusDB : 6 jauges × 4 familles × 5 tailles = 120, dont les Élixirs de Maturité et d'Expérience, niv. 155 à 195).
   fuel: {
     'Endurance': [0, 0, 0, 0],
-    'Maturité': [0, 0, 0, null],
+    'Maturité': [0, 0, 0, 0],
     'Amour': [0, 0, 0, 0],
     'Gain de sérénité': [0, 0, 0, 0],
     'Perte de sérénité': [0, 0, 0, 0],
-    'Expérience': [0, 0, 0, null]
+    'Expérience': [0, 0, 0, 0]
   },
   // repère HDV (classeur, relevés dofus-calculator.fr) : sert seulement à montrer ce que vaudraient tes carburants au prix du marché
+  // (null = aucun prix relevé : les Élixirs de Maturité et d'Expérience existent, mais leurs ingrédients n'ont pas de relevé)
   fuelRef: {
     'Endurance': [18.7, 180.8, 1310.2, 2474.5],
     'Maturité': [46.5, 50.9, 247.3, null],
@@ -77,11 +85,11 @@ var DD_DEFAULTS = {
   // recette la moins chère de chaque case (classeur, feuille « Synthèse carburants »)
   fuelRecipe: {
     "Endurance": ["Extrait d'Endurance","Philtre d'Endurance","Potion d'Endurance","Gigantesque Élixir d'Endurance"],
-    "Maturité": ["Grand Extrait de Maturité","Gigantesque Philtre de Maturité","Gigantesque Potion de Maturité","—"],
+    "Maturité": ["Grand Extrait de Maturité","Gigantesque Philtre de Maturité","Gigantesque Potion de Maturité","Élixir de Maturité (prix non relevé)"],
     "Amour": ["Gigantesque Extrait d'Amour","Petit Philtre d'Amour","Petite Potion d'Amour","Minuscule Élixir d'Amour"],
     "Gain de sérénité": ["Gigantesque Extrait de gain de Sérénité","Minuscule Philtre de gain de Sérénité","Gigantesque Potion de gain de Sérénité","Petit Élixir de gain de Sérénité"],
     "Perte de sérénité": ["Grand Extrait de perte de Sérénité","Philtre de perte de Sérénité","Minuscule Potion de perte de Sérénité","Grand Élixir de perte de Sérénité"],
-    "Expérience": ["Grand Extrait d'Expérience de monture","Philtre d'Expérience de monture","Grande Potion d'Expérience de monture","—"]
+    "Expérience": ["Grand Extrait d'Expérience de monture","Philtre d'Expérience de monture","Grande Potion d'Expérience de monture","Élixir d'Expérience de monture (prix non relevé)"]
   },
   // prix des runes : hôtel des ventes Ombre, relevés le 12/11/2026 sur la vidéo de l'utilisateur (runes.mp4).
   // Rune Fo, Cha et Age simples : hors de l'écran dans la vidéo ; 100 kamas l'unité (prix de l'utilisateur, 19/11/2026).
